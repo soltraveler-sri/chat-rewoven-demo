@@ -126,15 +126,38 @@ export function getRedisClient(): VercelKV | null {
     return null
   }
   
+  // Validate URL format before creating client
+  if (!clientInitLogged) {
+    const isHttps = config.url.startsWith("https://")
+    const isRedisProto = config.url.startsWith("redis://") || config.url.startsWith("rediss://")
+    let urlHost = "unknown"
+    try {
+      urlHost = new URL(config.url).host
+    } catch { /* invalid URL */ }
+
+    if (isRedisProto) {
+      console.warn(
+        `[Redis] WARNING: URL uses ${config.url.split("://")[0]}:// protocol (host: ${urlHost}). ` +
+        `@vercel/kv requires an HTTPS REST API URL. This will cause "fetch failed" errors. ` +
+        `Check that KV_REST_API_URL points to https://xxx.upstash.io, not redis://xxx.upstash.io:6379`
+      )
+    } else if (!isHttps) {
+      console.warn(
+        `[Redis] WARNING: URL does not start with https:// (starts with: ${config.url.slice(0, 10)}...). ` +
+        `This may cause connection failures.`
+      )
+    }
+
+    console.log(
+      `[Redis] Initialized client (backend: ${config.backend}, host: ${urlHost}, https: ${isHttps}, tokenLen: ${config.token.length})`
+    )
+    clientInitLogged = true
+  }
+
   redisClient = createClient({
     url: config.url,
     token: config.token,
   })
-  
-  if (!clientInitLogged) {
-    console.log(`[Redis] Initialized client (backend: ${config.backend})`)
-    clientInitLogged = true
-  }
   
   return redisClient
 }
