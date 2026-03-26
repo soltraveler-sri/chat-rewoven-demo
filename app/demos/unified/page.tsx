@@ -1486,7 +1486,9 @@ function UnifiedDemoContent() {
       })
       const classifyData = await classifyRes.json()
 
-      const isReadAloud = classifyData.intent === "read_aloud" && classifyData.confidence >= 0.7
+      // For a demo, bias heavily toward TTS when a doc is attached.
+      // Any hint of "read aloud" intent should trigger it — 0.4 threshold.
+      const isReadAloud = classifyData.intent === "read_aloud" && classifyData.confidence >= 0.4
 
       if (isReadAloud) {
         // Step 2a: Generate TTS
