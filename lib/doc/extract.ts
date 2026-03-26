@@ -3,9 +3,12 @@
  *
  * Supports PDF and DOCX files. Extracts plain text content
  * for use in LLM context and TTS generation.
+ *
+ * IMPORTANT: pdf-parse is dynamically imported to avoid loading pdfjs-dist
+ * (and its canvas/DOMMatrix polyfills) at module evaluation time, which
+ * crashes in Vercel's serverless runtime.
  */
 
-import { PDFParse } from "pdf-parse"
 import mammoth from "mammoth"
 
 export interface ExtractedDocument {
@@ -49,8 +52,12 @@ export function validateDocumentFile(
 
 /**
  * Extract text from a PDF buffer
+ *
+ * Uses dynamic import to avoid loading pdfjs-dist at module level,
+ * which requires DOMMatrix/canvas polyfills unavailable on Vercel.
  */
 async function extractFromPDF(buffer: Buffer): Promise<string> {
+  const { PDFParse } = await import("pdf-parse")
   const parser = new PDFParse({ data: new Uint8Array(buffer) })
   const result = await parser.getText()
   return result.text
