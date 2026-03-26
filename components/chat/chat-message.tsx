@@ -8,6 +8,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
+import { MarkdownContent } from "@/components/ui/markdown-content"
 import { BranchChip } from "./branch-chip"
 import type { ChatMessage, BranchThread } from "@/lib/types"
 
@@ -72,9 +73,13 @@ export function ChatMessageBubble({
               : "bg-muted text-foreground rounded-bl-md"
           )}
         >
-          <p className="text-sm whitespace-pre-wrap break-words leading-relaxed">
-            {message.text}
-          </p>
+          {isUser ? (
+            <p className="text-sm whitespace-pre-wrap break-words leading-relaxed">
+              {message.text}
+            </p>
+          ) : (
+            <MarkdownContent content={message.text} />
+          )}
 
           {/* Branch button for assistant messages */}
           {isAssistant && message.responseId && (

@@ -16,6 +16,7 @@ import {
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import { MarkdownContent } from "@/components/ui/markdown-content"
 import { cn } from "@/lib/utils"
 import type { CodexTask, CodexFileChange, WorkspaceSnapshot } from "@/lib/codex/types"
 import { TASK_STATUS_LABELS, TASK_STATUS_COLORS } from "@/lib/codex/types"
@@ -276,8 +277,8 @@ export function TaskCard({
                       <p className="text-[10px] uppercase text-muted-foreground mb-1 font-medium">
                         Plan
                       </p>
-                      <div className="text-sm text-foreground/80 prose prose-sm dark:prose-invert max-w-none prose-p:my-1 prose-ul:my-1 prose-li:my-0.5">
-                        <div className="whitespace-pre-wrap">{task.planMarkdown}</div>
+                      <div className="text-sm text-foreground/80">
+                        <MarkdownContent content={task.planMarkdown} />
                       </div>
                     </div>
                   )}

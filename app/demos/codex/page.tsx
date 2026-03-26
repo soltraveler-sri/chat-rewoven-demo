@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import { MarkdownContent } from "@/components/ui/markdown-content"
 import { cn } from "@/lib/utils"
 import { TaskCard } from "@/components/codex"
 import { StorageWarningBanner } from "@/components/ui/storage-warning-banner"
@@ -673,9 +674,13 @@ function MessageBubble({ message }: { message: ChatMessage }) {
             : "bg-muted text-foreground rounded-bl-md"
         )}
       >
-        <p className="text-sm whitespace-pre-wrap break-words leading-relaxed">
-          {message.text}
-        </p>
+        {isUser ? (
+          <p className="text-sm whitespace-pre-wrap break-words leading-relaxed">
+            {message.text}
+          </p>
+        ) : (
+          <MarkdownContent content={message.text ?? ""} />
+        )}
       </div>
     </div>
   )

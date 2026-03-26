@@ -35,6 +35,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { Switch } from "@/components/ui/switch"
 import { Label } from "@/components/ui/label"
+import { MarkdownContent } from "@/components/ui/markdown-content"
 import { Composer } from "./composer"
 import { TypingIndicator } from "./typing-indicator"
 import { cn } from "@/lib/utils"
@@ -572,9 +573,13 @@ function BranchMessage({ message }: { message: ChatMessage }) {
             : "bg-muted text-foreground rounded-bl-md"
         )}
       >
-        <p className="text-sm whitespace-pre-wrap break-words leading-relaxed">
-          {message.text}
-        </p>
+        {isUser ? (
+          <p className="text-sm whitespace-pre-wrap break-words leading-relaxed">
+            {message.text}
+          </p>
+        ) : (
+          <MarkdownContent content={message.text} />
+        )}
       </div>
     </div>
   )

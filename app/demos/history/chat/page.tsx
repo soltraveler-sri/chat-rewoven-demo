@@ -6,6 +6,7 @@ import Link from "next/link"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { TooltipProvider } from "@/components/ui/tooltip"
+import { MarkdownContent } from "@/components/ui/markdown-content"
 import { cn } from "@/lib/utils"
 import { HistoryComposer, type AttachedChat } from "@/components/history"
 
@@ -334,9 +335,13 @@ function Demo2MessageBubble({ message }: { message: Demo2Message }) {
             <span>Context attached</span>
           </div>
         )}
-        <p className="text-sm whitespace-pre-wrap break-words leading-relaxed">
-          {message.text}
-        </p>
+        {isUser ? (
+          <p className="text-sm whitespace-pre-wrap break-words leading-relaxed">
+            {message.text}
+          </p>
+        ) : (
+          <MarkdownContent content={message.text} />
+        )}
         <p
           className={cn(
             "text-[10px] mt-1",
