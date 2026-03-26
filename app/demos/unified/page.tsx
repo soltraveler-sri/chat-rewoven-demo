@@ -1478,17 +1478,44 @@ function UnifiedDemoContent() {
     }
 
     try {
-      // Step 1: Classify intent via LLM
-      const classifyRes = await fetch("/api/doc/classify", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userMessage: userText, filename }),
-      })
-      const classifyData = await classifyRes.json()
+      // Step 1: Determine if this is a "read aloud" request.
+      // Use a keyword check first — if the user clearly wants TTS, skip the
+      // LLM classifier entirely (it's unreliable for short, ambiguous prompts).
+      const lowerText = userText.toLowerCase()
+      const READ_KEYWORDS = [
+        "read", "aloud", "listen", "narrate", "audio", "tts",
+        "play", "speak", "voice", "out loud", "read it", "read this",
+        "read me", "hear",
+      ]
+      const hasReadKeyword = READ_KEYWORDS.some((kw) => lowerText.includes(kw))
 
-      // For a demo, bias heavily toward TTS when a doc is attached.
-      // Any hint of "read aloud" intent should trigger it — 0.4 threshold.
-      const isReadAloud = classifyData.intent === "read_aloud" && classifyData.confidence >= 0.4
+      // Analytical keywords that clearly indicate "discuss" intent
+      const DISCUSS_KEYWORDS = [
+        "summarize", "summary", "explain", "analyze", "what does",
+        "what are", "key points", "tell me about", "describe",
+        "compare", "extract", "list the", "how does", "why does",
+      ]
+      const hasDiscussKeyword = DISCUSS_KEYWORDS.some((kw) => lowerText.includes(kw))
+
+      let isReadAloud: boolean
+
+      if (hasReadKeyword && !hasDiscussKeyword) {
+        // Clear read-aloud signal — skip classifier
+        isReadAloud = true
+        console.log(`[Doc:classify] Keyword match — skipping LLM classifier`)
+      } else if (hasDiscussKeyword && !hasReadKeyword) {
+        // Clear discuss signal — skip classifier
+        isReadAloud = false
+      } else {
+        // Ambiguous — use LLM classifier as tiebreaker
+        const classifyRes = await fetch("/api/doc/classify", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ userMessage: userText, filename }),
+        })
+        const classifyData = await classifyRes.json()
+        isReadAloud = classifyData.intent === "read_aloud" && classifyData.confidence >= 0.3
+      }
 
       if (isReadAloud) {
         // Step 2a: Generate TTS

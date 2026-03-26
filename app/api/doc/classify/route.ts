@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { z } from "zod"
-import { createParsedResponse } from "@/lib/openai"
+import { getOpenAIClient } from "@/lib/openai"
+import { zodTextFormat } from "openai/helpers/zod"
 
 export const runtime = "nodejs"
 
@@ -15,27 +16,17 @@ const IntentSchema = z.object({
   confidence: z.number(),
 })
 
-const CLASSIFY_INSTRUCTIONS = `You are an intent classifier. The user has attached a document and sent a message. Your job is to determine whether they want:
+const DOC_INTENT_MODEL = process.env.OPENAI_MODEL_DOC_INTENT || "gpt-5.4-nano"
 
-1. "read_aloud" — They want the document (or a section of it) read aloud / converted to audio / narrated via TTS. Examples:
-   - "Read this to me"
-   - "Can you read this document aloud?"
-   - "Read me this doc"
-   - "Convert this to audio"
-   - "Read this PDF to me"
-   - "I want to listen to this"
-   - "Narrate this document"
-   - "Play this for me"
-   - "TTS this"
+const CLASSIFY_INSTRUCTIONS = `You classify user intent when they attach a document. Pick ONE:
 
-2. "discuss" — They want to chat about the document, ask questions, summarize it, analyze it, etc. Examples:
-   - "What does this document say about X?"
-   - "Summarize this PDF"
-   - "What are the key points?"
-   - "Explain section 3"
-   - "What is the author's main argument?"
+"read_aloud" — The user wants the document READ ALOUD, narrated, converted to audio, or played as TTS. This includes ANY phrasing of "read this", "read me this", "could you read", "read it to me", "read this document", "play this", "listen to this", "narrate", "audio", "TTS", or similar. When in doubt and the message is short/vague, prefer read_aloud.
 
-Respond with the intent and your confidence level (0.0 to 1.0).`
+"discuss" — The user wants to ASK QUESTIONS about the document, summarize it, analyze it, or extract specific information. This requires the user to ask a specific question or request analysis.
+
+IMPORTANT: "read this" / "could you read this" = read_aloud (NOT discuss). The word "read" almost always means read_aloud when a document is attached.
+
+Respond with intent and confidence (0.0 to 1.0). Use high confidence (0.8+) when the signal is clear.`
 
 interface ClassifyRequest {
   userMessage: string
@@ -53,13 +44,22 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const { parsed } = await createParsedResponse({
-      kind: "intent",
+    const client = getOpenAIClient()
+
+    console.log(`[Doc:classify] Using model: ${DOC_INTENT_MODEL}`)
+
+    const response = await client.responses.parse({
+      model: DOC_INTENT_MODEL,
       input: `The user attached a file called "${body.filename}" and said: "${body.userMessage}"`,
-      schema: IntentSchema,
-      schemaName: "doc_intent",
       instructions: CLASSIFY_INSTRUCTIONS,
+      store: false,
+      reasoning: { effort: "low" },
+      text: {
+        format: zodTextFormat(IntentSchema, "doc_intent"),
+      },
     })
+
+    const parsed = response.output_parsed as { intent: "read_aloud" | "discuss"; confidence: number } | null
 
     if (!parsed) {
       // Default to discuss if classification fails
