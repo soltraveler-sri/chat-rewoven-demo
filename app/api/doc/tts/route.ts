@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import { generateDocumentTTS, type TTSVoice, TTS_VOICES } from "@/lib/doc/tts"
+import { chunkText, generateChunkAudio, type TTSVoice, TTS_VOICES } from "@/lib/doc/tts"
 
 export const runtime = "nodejs"
 
@@ -16,9 +16,9 @@ interface TTSRequest {
 /**
  * POST /api/doc/tts
  *
- * Generates TTS audio for document text.
- * Handles chunking internally for long documents.
- * Returns MP3 audio as a binary response.
+ * Generates TTS audio for document text with streaming.
+ * Chunks text and streams each chunk's MP3 bytes as they're generated,
+ * enabling progressive playback on the client via MediaSource.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -45,23 +45,38 @@ export async function POST(request: NextRequest) {
       ? body.text.slice(0, MAX_TEXT_LENGTH)
       : body.text
 
-    console.log(`[Doc:tts] Generating TTS for ${text.length} chars, voice: ${body.voice || "nova"}`)
+    const textChunks = chunkText(text)
 
-    const audioBuffer = await generateDocumentTTS(text, {
-      voice: body.voice || "nova",
-      model: body.model || "tts-1",
+    console.log(`[Doc:tts] Streaming TTS for ${text.length} chars, ${textChunks.length} chunks, voice: ${body.voice || "nova"}`)
+
+    const options = {
+      voice: (body.voice || "nova") as TTSVoice,
+      model: (body.model || "tts-1") as "tts-1" | "tts-1-hd",
       speed: body.speed || 1.0,
+    }
+
+    // Stream MP3 bytes as each chunk is generated
+    const stream = new ReadableStream({
+      async start(controller) {
+        try {
+          for (let i = 0; i < textChunks.length; i++) {
+            console.log(`[Doc:tts] Generating chunk ${i + 1}/${textChunks.length}`)
+            const audioBuffer = await generateChunkAudio(textChunks[i], options)
+            controller.enqueue(new Uint8Array(audioBuffer))
+          }
+          console.log(`[Doc:tts] Streaming complete (${textChunks.length} chunks)`)
+          controller.close()
+        } catch (error) {
+          console.error("[Doc:tts] Stream error:", error)
+          controller.error(error)
+        }
+      },
     })
 
-    console.log(`[Doc:tts] Generated ${audioBuffer.length} bytes of audio`)
-
-    // Return as MP3 binary
-    const uint8 = new Uint8Array(audioBuffer)
-    return new NextResponse(uint8, {
-      status: 200,
+    return new Response(stream, {
       headers: {
         "Content-Type": "audio/mpeg",
-        "Content-Length": audioBuffer.length.toString(),
+        "X-Total-Chunks": textChunks.length.toString(),
         "Cache-Control": "no-cache",
       },
     })

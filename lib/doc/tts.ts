@@ -90,7 +90,7 @@ export function chunkText(text: string, maxChars: number = TTS_CHAR_LIMIT): stri
  * Generate TTS audio for a single text chunk.
  * Returns the raw audio buffer (mp3).
  */
-async function generateChunkAudio(
+export async function generateChunkAudio(
   text: string,
   options: TTSOptions
 ): Promise<Buffer> {

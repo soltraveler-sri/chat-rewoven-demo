@@ -322,6 +322,8 @@ function UnifiedDemoContent() {
   const [isUploadingDoc, setIsUploadingDoc] = useState(false)
   const [isGeneratingTTS, setIsGeneratingTTS] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  /** Stores TTS stream configs keyed by message localId — AudioPlayer reads these for streaming */
+  const ttsStreamConfigRef = useRef<Map<string, { text: string; voice: string; model: string }>>(new Map())
 
   // ==========================================================================
   // PERSISTENCE STATE
@@ -1518,35 +1520,24 @@ function UnifiedDemoContent() {
       }
 
       if (isReadAloud) {
-        // Step 2a: Generate TTS
+        // Step 2a: Stream TTS progressively — show message immediately,
+        // AudioPlayer handles fetching and progressive playback via MediaSource
         setIsLoading(false)
-        setIsGeneratingTTS(true)
 
-        const ttsRes = await fetch("/api/doc/tts", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            text: extractedDocText,
-            voice: "nova",
-            model: "tts-1",
-          }),
+        const msgId = generateId()
+
+        // Store stream config for AudioPlayer to pick up
+        ttsStreamConfigRef.current.set(msgId, {
+          text: extractedDocText,
+          voice: "nova",
+          model: "tts-1",
         })
 
-        if (!ttsRes.ok) {
-          const errData = await ttsRes.json().catch(() => ({}))
-          throw new Error((errData as { error?: string }).error || "TTS generation failed")
-        }
-
-        // Create blob URL from audio response
-        const audioBlob = await ttsRes.blob()
-        const audioUrl = URL.createObjectURL(audioBlob)
-
         const assistantMessage: UnifiedMessage = {
-          localId: generateId(),
+          localId: msgId,
           role: "assistant",
-          text: `Here's the audio reading of "${filename}". Press play to listen.`,
+          text: `Here's the audio reading of "${filename}".`,
           createdAt: Date.now(),
-          audioUrl,
           audioMeta: { voice: "nova", filename },
         }
 
@@ -1862,6 +1853,7 @@ function UnifiedDemoContent() {
     setAttachedFile(null)
     setExtractedDocText(null)
     setIsGeneratingTTS(false)
+    ttsStreamConfigRef.current.clear()
     storedThreadIdRef.current = null
     ingestedTaskIdsRef.current.clear()
     lastResponseIdRef.current = null
@@ -2038,6 +2030,7 @@ function UnifiedDemoContent() {
                       onBranch={handleBranch}
                       branches={branchesByParentLocalId[message.localId] || []}
                       onOpenBranch={handleOpenBranch}
+                      audioStreamConfig={ttsStreamConfigRef.current.get(message.localId)}
                     />
                   )
                 })}
