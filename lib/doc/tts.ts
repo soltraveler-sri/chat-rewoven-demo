@@ -8,8 +8,12 @@
 
 import { getOpenAIClient } from "@/lib/openai"
 
-/** OpenAI TTS character limit per request */
-const TTS_CHAR_LIMIT = 4096
+/**
+ * Target chunk size for TTS requests.
+ * Smaller chunks = faster time-to-first-audio (each chunk generates in ~3-6s).
+ * OpenAI's hard limit is 4096, but we use 500 to enable progressive streaming.
+ */
+const TTS_CHUNK_SIZE = 500
 
 /** Available OpenAI TTS voices */
 export const TTS_VOICES = [
@@ -35,7 +39,7 @@ export interface TTSOptions {
  * Split text into chunks that fit within the TTS character limit.
  * Splits on sentence boundaries to avoid cutting words/sentences.
  */
-export function chunkText(text: string, maxChars: number = TTS_CHAR_LIMIT): string[] {
+export function chunkText(text: string, maxChars: number = TTS_CHUNK_SIZE): string[] {
   if (text.length <= maxChars) {
     return [text]
   }
@@ -58,18 +62,18 @@ export function chunkText(text: string, maxChars: number = TTS_CHAR_LIMIT): stri
     const questEnd = remaining.lastIndexOf("? ", splitIndex)
     const bestSentence = Math.max(sentenceEnd, exclamEnd, questEnd)
 
-    if (bestSentence > maxChars * 0.5) {
-      // Found a good sentence boundary in the second half
+    if (bestSentence > maxChars * 0.3) {
+      // Found a good sentence boundary
       splitIndex = bestSentence + 1 // Include the punctuation
     } else {
       // Fall back to paragraph boundary
       const paraEnd = remaining.lastIndexOf("\n", splitIndex)
-      if (paraEnd > maxChars * 0.3) {
+      if (paraEnd > maxChars * 0.2) {
         splitIndex = paraEnd
       } else {
         // Fall back to word boundary
         const wordEnd = remaining.lastIndexOf(" ", splitIndex)
-        if (wordEnd > maxChars * 0.3) {
+        if (wordEnd > maxChars * 0.2) {
           splitIndex = wordEnd
         }
         // Else just hard-cut at maxChars
