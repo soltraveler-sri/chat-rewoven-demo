@@ -11,6 +11,8 @@ import {
   Zap,
   Plus,
   MessageSquare,
+  Paperclip,
+  FileAudio,
 } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
@@ -20,6 +22,7 @@ import {
   ChatMessageBubble,
   TypingIndicator,
   BranchOverlay,
+  FileAttachmentChip,
 } from "@/components/chat"
 import type { BranchCloseResult } from "@/components/chat"
 import { TaskCard } from "@/components/codex"
@@ -310,6 +313,15 @@ function UnifiedDemoContent() {
   const [finderOptions, setFinderOptions] = useState<FinderOption[]>([])
   const [openingChatId, setOpeningChatId] = useState<string | null>(null)
   const requestIdRef = useRef(0)
+
+  // ==========================================================================
+  // DOC-READ STATE
+  // ==========================================================================
+  const [attachedFile, setAttachedFile] = useState<File | null>(null)
+  const [extractedDocText, setExtractedDocText] = useState<string | null>(null)
+  const [isUploadingDoc, setIsUploadingDoc] = useState(false)
+  const [isGeneratingTTS, setIsGeneratingTTS] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   // ==========================================================================
   // PERSISTENCE STATE
@@ -905,13 +917,19 @@ function UnifiedDemoContent() {
   // Handle sending a message
   const handleSend = async () => {
     const userText = inputValue.trim()
-    if (!userText || isLoading || isMerging) return
+    if (!userText || isLoading || isMerging || isGeneratingTTS) return
 
     setInputValue("")
     shouldAutoScroll.current = true
 
     // Clear finder results when sending a new message
     setFinderOptions([])
+
+    // If a file is attached, route to doc-read flow
+    if (attachedFile && extractedDocText) {
+      await handleDocReadSend(userText)
+      return
+    }
 
     // Check for /find command
     if (isFindCommand(userText)) {
@@ -1358,6 +1376,212 @@ function UnifiedDemoContent() {
     }
   }
 
+  // ==========================================================================
+  // DOC-READ HANDLERS
+  // ==========================================================================
+
+  const handleFileSelect = useCallback(async (file: File) => {
+    const ext = file.name.toLowerCase().split(".").pop()
+    if (ext !== "pdf" && ext !== "docx") {
+      toast.error("Unsupported file type. Please upload a PDF or DOCX file.")
+      return
+    }
+
+    setAttachedFile(file)
+    setIsUploadingDoc(true)
+    setExtractedDocText(null)
+
+    try {
+      const formData = new FormData()
+      formData.append("file", file)
+
+      const res = await fetch("/api/doc/upload", {
+        method: "POST",
+        body: formData,
+      })
+
+      if (!res.ok) {
+        const data = await res.json()
+        throw new Error(data.error || "Failed to process file")
+      }
+
+      const data = await res.json()
+      setExtractedDocText(data.text)
+      toast.success(`Extracted ${data.wordCount.toLocaleString()} words from ${file.name}`)
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "Failed to process file"
+      toast.error(errorMessage)
+      setAttachedFile(null)
+      setExtractedDocText(null)
+    } finally {
+      setIsUploadingDoc(false)
+    }
+  }, [])
+
+  const handleRemoveAttachment = useCallback(() => {
+    setAttachedFile(null)
+    setExtractedDocText(null)
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ""
+    }
+  }, [])
+
+  const handleDocReadSend = async (userText: string) => {
+    if (!attachedFile || !extractedDocText) return
+
+    const filename = attachedFile.name
+
+    // Clear attachment state
+    setAttachedFile(null)
+    setExtractedDocText(null)
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ""
+    }
+
+    // Add user message to UI
+    const userMessage: UnifiedMessage = {
+      localId: generateId(),
+      role: "user",
+      text: `📎 ${filename}\n${userText}`,
+      createdAt: Date.now(),
+    }
+
+    setState((prev) => ({
+      ...prev,
+      messages: [...prev.messages, userMessage],
+    }))
+    setIsLoading(true)
+
+    // Persist thread if needed
+    if (!storedThreadIdRef.current) {
+      const threadTitle = `Doc: ${filename}`
+      const id = await createStoredThread(threadTitle)
+      if (id) {
+        storedThreadIdRef.current = id
+        selfSetChatIdRef.current = id
+        router.replace(`/demos/unified?chatId=${id}`, { scroll: false })
+        await persistMessage(id, {
+          id: userMessage.localId,
+          role: userMessage.role,
+          text: userMessage.text,
+          createdAt: userMessage.createdAt,
+        })
+        fetchThreads()
+      }
+    } else {
+      await persistMessage(storedThreadIdRef.current, {
+        id: userMessage.localId,
+        role: userMessage.role,
+        text: userMessage.text,
+        createdAt: userMessage.createdAt,
+      })
+    }
+
+    try {
+      // Step 1: Classify intent via LLM
+      const classifyRes = await fetch("/api/doc/classify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userMessage: userText, filename }),
+      })
+      const classifyData = await classifyRes.json()
+
+      const isReadAloud = classifyData.intent === "read_aloud" && classifyData.confidence >= 0.7
+
+      if (isReadAloud) {
+        // Step 2a: Generate TTS
+        setIsLoading(false)
+        setIsGeneratingTTS(true)
+
+        const ttsRes = await fetch("/api/doc/tts", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            text: extractedDocText,
+            voice: "nova",
+            model: "tts-1",
+          }),
+        })
+
+        if (!ttsRes.ok) {
+          const errData = await ttsRes.json().catch(() => ({}))
+          throw new Error((errData as { error?: string }).error || "TTS generation failed")
+        }
+
+        // Create blob URL from audio response
+        const audioBlob = await ttsRes.blob()
+        const audioUrl = URL.createObjectURL(audioBlob)
+
+        const assistantMessage: UnifiedMessage = {
+          localId: generateId(),
+          role: "assistant",
+          text: `Here's the audio reading of "${filename}". Press play to listen.`,
+          createdAt: Date.now(),
+          audioUrl,
+          audioMeta: { voice: "nova", filename },
+        }
+
+        setState((prev) => ({
+          ...prev,
+          messages: [...prev.messages, assistantMessage],
+        }))
+
+        // Persist
+        const threadId = storedThreadIdRef.current
+        if (threadId) {
+          await persistMessage(threadId, {
+            id: assistantMessage.localId,
+            role: assistantMessage.role,
+            text: assistantMessage.text,
+            createdAt: assistantMessage.createdAt,
+          })
+        }
+      } else {
+        // Step 2b: Normal chat with document as context
+        await enqueueChain(async () => {
+          const contextInput = `[Document: ${filename}]\n\n${extractedDocText.slice(0, 30000)}\n\n---\n\nUser question: ${userText}`
+          const responseData = await respondWithRetry({
+            input: contextInput,
+            mode: "deep",
+            source: "user",
+          })
+
+          const assistantMessage: UnifiedMessage = {
+            localId: generateId(),
+            role: "assistant",
+            text: responseData.output_text,
+            createdAt: Date.now(),
+            responseId: responseData.id,
+          }
+
+          lastResponseIdRef.current = responseData.id
+          setState((prev) => ({
+            ...prev,
+            messages: [...prev.messages, assistantMessage],
+            lastResponseId: responseData.id,
+          }))
+
+          const threadId = storedThreadIdRef.current
+          if (threadId) {
+            await persistMessage(threadId, {
+              id: assistantMessage.localId,
+              role: assistantMessage.role,
+              text: assistantMessage.text,
+              createdAt: assistantMessage.createdAt,
+              responseId: assistantMessage.responseId,
+            })
+          }
+        })
+      }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "Something went wrong"
+      toast.error(errorMessage)
+    } finally {
+      setIsLoading(false)
+      setIsGeneratingTTS(false)
+    }
+  }
+
   // Handle creating a branch
   const handleBranch = (localId: string, responseId: string) => {
     const existingBranches = branchesByParentLocalId[localId] || []
@@ -1606,6 +1830,9 @@ function UnifiedDemoContent() {
     setTasks({})
     setFinderOptions([])
     setInputValue("")
+    setAttachedFile(null)
+    setExtractedDocText(null)
+    setIsGeneratingTTS(false)
     storedThreadIdRef.current = null
     ingestedTaskIdsRef.current.clear()
     lastResponseIdRef.current = null
@@ -1746,6 +1973,12 @@ function UnifiedDemoContent() {
                     </span>{" "}
                     &mdash; Click branch on any assistant message
                   </p>
+                  <p>
+                    <span className="inline-flex items-center gap-1">
+                      <FileAudio className="h-3 w-3" /> Doc Read
+                    </span>{" "}
+                    &mdash; Attach a PDF/DOCX and ask to read it aloud
+                  </p>
                 </div>
               </div>
             ) : (
@@ -1825,25 +2058,73 @@ function UnifiedDemoContent() {
           </div>
 
           {/* Composer */}
-          <div className="flex items-end gap-2 p-4 border-t border-border bg-card/50">
-            <Textarea
-              ref={textareaRef}
-              value={inputValue}
-              onChange={(e) => setInputValue(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="Type a message, @codex to run a task, or /find to search..."
-              disabled={isLoading || isMerging}
-              rows={1}
-              className="min-h-[44px] max-h-[200px] resize-none bg-background"
-            />
-            <Button
-              onClick={handleSend}
-              disabled={isLoading || isMerging || !inputValue.trim()}
-              size="icon"
-              className="h-[44px] w-[44px] shrink-0"
-            >
-              <Send className="h-4 w-4" />
-            </Button>
+          <div className="border-t border-border bg-card/50">
+            {/* File attachment chip */}
+            {attachedFile && (
+              <div className="px-4 pt-3 pb-0">
+                <FileAttachmentChip
+                  filename={attachedFile.name}
+                  isProcessing={isUploadingDoc}
+                  onRemove={handleRemoveAttachment}
+                />
+              </div>
+            )}
+
+            {/* TTS generation indicator */}
+            {isGeneratingTTS && (
+              <div className="px-4 pt-3 pb-0">
+                <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-primary/10 border border-primary/20 text-sm">
+                  <Loader2 className="h-3.5 w-3.5 text-primary animate-spin" />
+                  <span className="text-xs text-primary font-medium">Generating audio...</span>
+                </div>
+              </div>
+            )}
+
+            <div className="flex items-end gap-2 p-4">
+              {/* File attachment button */}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0]
+                  if (file) handleFileSelect(file)
+                }}
+              />
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-[44px] w-[44px] shrink-0"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isLoading || isMerging || isUploadingDoc || isGeneratingTTS}
+              >
+                <Paperclip className="h-4 w-4" />
+              </Button>
+
+              <Textarea
+                ref={textareaRef}
+                value={inputValue}
+                onChange={(e) => setInputValue(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder={
+                  attachedFile
+                    ? "Ask about the doc, or say \"read this to me\"..."
+                    : "Type a message, @codex to run a task, or /find to search..."
+                }
+                disabled={isLoading || isMerging || isGeneratingTTS}
+                rows={1}
+                className="min-h-[44px] max-h-[200px] resize-none bg-background"
+              />
+              <Button
+                onClick={handleSend}
+                disabled={isLoading || isMerging || isGeneratingTTS || !inputValue.trim()}
+                size="icon"
+                className="h-[44px] w-[44px] shrink-0"
+              >
+                <Send className="h-4 w-4" />
+              </Button>
+            </div>
           </div>
         </div>
 

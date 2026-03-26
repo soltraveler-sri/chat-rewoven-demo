@@ -9,6 +9,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { BranchChip } from "./branch-chip"
+import { AudioPlayer } from "./audio-player"
 import type { ChatMessage, BranchThread } from "@/lib/types"
 
 interface ChatMessageProps {
@@ -75,6 +76,16 @@ export function ChatMessageBubble({
           <p className="text-sm whitespace-pre-wrap break-words leading-relaxed">
             {message.text}
           </p>
+
+          {/* Audio player for doc-read messages */}
+          {isAssistant && message.audioUrl && (
+            <AudioPlayer
+              audioUrl={message.audioUrl}
+              filename={message.audioMeta?.filename}
+              voice={message.audioMeta?.voice}
+              className="mt-2"
+            />
+          )}
 
           {/* Branch button for assistant messages */}
           {isAssistant && message.responseId && (

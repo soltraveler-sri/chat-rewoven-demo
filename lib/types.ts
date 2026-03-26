@@ -27,6 +27,13 @@ export interface ChatMessage {
   responseId?: string
   /** Context metadata - only present for context messages */
   contextMeta?: ContextMetadata
+  /** Audio URL for TTS playback - only present for doc-read assistant messages */
+  audioUrl?: string
+  /** Audio metadata for doc-read messages */
+  audioMeta?: {
+    voice: string
+    filename: string
+  }
 }
 
 export interface MainThreadState {
