@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/tooltip"
 import { MarkdownContent } from "@/components/ui/markdown-content"
 import { BranchChip } from "./branch-chip"
+import { AudioPlayer, type TTSStreamConfig } from "./audio-player"
 import type { ChatMessage, BranchThread } from "@/lib/types"
 
 interface ChatMessageProps {
@@ -17,6 +18,8 @@ interface ChatMessageProps {
   onBranch?: (localId: string, responseId: string) => void
   branches?: BranchThread[]
   onOpenBranch?: (branchId: string) => void
+  /** Streaming TTS config — passed through to AudioPlayer for progressive playback */
+  audioStreamConfig?: TTSStreamConfig
 }
 
 export function ChatMessageBubble({
@@ -24,6 +27,7 @@ export function ChatMessageBubble({
   onBranch,
   branches = [],
   onOpenBranch,
+  audioStreamConfig,
 }: ChatMessageProps) {
   const isUser = message.role === "user"
   const isAssistant = message.role === "assistant"
@@ -79,6 +83,17 @@ export function ChatMessageBubble({
             </p>
           ) : (
             <MarkdownContent content={message.text} />
+          )}
+
+          {/* Audio player for doc-read messages (streaming or static) */}
+          {isAssistant && (message.audioUrl || audioStreamConfig) && (
+            <AudioPlayer
+              audioUrl={message.audioUrl}
+              streamConfig={audioStreamConfig}
+              filename={message.audioMeta?.filename}
+              voice={message.audioMeta?.voice}
+              className="mt-2"
+            />
           )}
 
           {/* Branch button for assistant messages */}
