@@ -3,7 +3,6 @@
 import { useState, useRef, useEffect, useCallback, useMemo, Suspense } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import {
-  RotateCcw,
   Loader2,
   Send,
   Search,
@@ -26,6 +25,7 @@ import {
 } from "@/components/chat"
 import type { BranchCloseResult } from "@/components/chat"
 import { TaskCard } from "@/components/codex"
+import { AssistantLauncher, AssistantTaskCard } from "@/components/assistant"
 import { FinderOptionCard, type FinderOption } from "@/components/history"
 import { StorageWarningBanner } from "@/components/ui/storage-warning-banner"
 import type {
@@ -37,9 +37,15 @@ import type {
 } from "@/lib/types"
 import type { CodexTask, WorkspaceSnapshot } from "@/lib/codex/types"
 import type { StoredChatThread, StoredChatThreadMeta } from "@/lib/store/types"
+import type {
+  AssistantChatThreadInput,
+  AssistantRunResponse,
+  AssistantTaskResult,
+} from "@/lib/assistant/types"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { logAuditClient, flushAuditTelemetry } from "@/lib/telemetry"
 import { SessionChatCache } from "@/lib/session-cache"
+import { createAssistantDemoThreads } from "@/lib/assistant/demo-seed"
 
 // =============================================================================
 // HELPERS
@@ -61,6 +67,20 @@ function isCodexCommand(text: string): boolean {
  */
 function extractCodexPrompt(text: string): string {
   return text.trim().slice(7).trim() // Remove "@codex "
+}
+
+/**
+ * Check if a message is an @assistant command
+ */
+function isAssistantCommand(text: string): boolean {
+  return text.trim().toLowerCase().startsWith("@assistant ")
+}
+
+/**
+ * Extract the prompt from an @assistant command
+ */
+function extractAssistantPrompt(text: string): string {
+  return text.trim().slice(11).trim() // Remove "@assistant "
 }
 
 /**
@@ -129,6 +149,10 @@ interface UnifiedMessage extends ChatMessage {
   taskId?: string
   /** Whether this is a task card (renders TaskCard instead of bubble) */
   isTaskCard?: boolean
+  /** Optional Assistant task ID if this is an Assistant card message */
+  assistantTaskId?: string
+  /** Whether this is an Assistant card (renders AssistantTaskCard instead of bubble) */
+  isAssistantTaskCard?: boolean
 }
 
 // =============================================================================
@@ -256,6 +280,39 @@ interface FindResponse {
   }>
 }
 
+function createPendingAssistantTask(id: string, requestText: string): AssistantTaskResult {
+  const now = Date.now()
+  return {
+    id,
+    createdAt: now,
+    updatedAt: now,
+    status: "searching",
+    requestText,
+    interpretedGoal:
+      "Ask the Assistant to work across your chats, recover unfinished threads, or turn scattered context into files.",
+    taskKind: "clarification",
+    progress: ["queued", "interpreting", "searching"],
+    sources: [],
+    resultSummary: "Reviewing available chat context...",
+    proposedActions: [],
+    reviewedChatCount: 0,
+  }
+}
+
+function createFailedAssistantTask(
+  id: string,
+  requestText: string,
+  message: string
+): AssistantTaskResult {
+  return {
+    ...createPendingAssistantTask(id, requestText),
+    status: "failed",
+    updatedAt: Date.now(),
+    resultSummary: message,
+    error: message,
+  }
+}
+
 // =============================================================================
 // MAIN COMPONENT
 // =============================================================================
@@ -305,6 +362,11 @@ function UnifiedDemoContent() {
   const [workspace, setWorkspace] = useState<WorkspaceSnapshot | null>(null)
   const ingestedTaskIdsRef = useRef<Set<string>>(new Set())
   const isIngestingRef = useRef(false)
+
+  // ==========================================================================
+  // ASSISTANT STATE
+  // ==========================================================================
+  const [assistantTasks, setAssistantTasks] = useState<Record<string, AssistantTaskResult>>({})
 
   // ==========================================================================
   // FIND STATE
@@ -381,6 +443,103 @@ function UnifiedDemoContent() {
       setIsLoadingThreads(false)
     }
   }, [])
+
+  const buildAssistantLocalThreads = useCallback((): AssistantChatThreadInput[] => {
+    return SessionChatCache.listFullThreads().map((thread) => ({
+      id: thread.id,
+      title: thread.title,
+      summary: thread.summary,
+      category: thread.category,
+      createdAt: thread.createdAt,
+      updatedAt: thread.updatedAt,
+      messages: thread.messages.map((message) => ({
+        id: message.id,
+        role: message.role,
+        text: message.text,
+        createdAt: message.createdAt,
+        taskId: message.taskId,
+        isTaskCard: message.isTaskCard,
+      })),
+    }))
+  }, [])
+
+  const buildCurrentAssistantThread = useCallback(
+    (messageList: UnifiedMessage[] = state.messages as UnifiedMessage[]): AssistantChatThreadInput | null => {
+      const visibleMessages = messageList.filter(
+        (message) =>
+          !message.isAssistantTaskCard &&
+          !message.text.trim().toLowerCase().startsWith("@assistant ")
+      )
+      if (visibleMessages.length === 0) return null
+
+      const threadId = storedThreadIdRef.current || "current-chat"
+      const threadMeta = threads.find((thread) => thread.id === threadId)
+      const firstCreatedAt = visibleMessages[0]?.createdAt || Date.now()
+
+      return {
+        id: threadId,
+        title: threadMeta?.title || "Current chat",
+        summary: threadMeta?.summary,
+        category: threadMeta?.category || "recent",
+        createdAt: threadMeta?.createdAt || firstCreatedAt,
+        updatedAt: Date.now(),
+        messages: visibleMessages.map((message) => ({
+          id: message.localId,
+          role: message.role,
+          text: message.text,
+          createdAt: message.createdAt,
+          taskId: message.taskId,
+          isTaskCard: message.isTaskCard,
+        })),
+      }
+    },
+    [state.messages, threads]
+  )
+
+  const runAssistantTask = useCallback(
+    async (
+      request: string,
+      options?: {
+        taskId?: string
+        previousTask?: AssistantTaskResult | null
+        currentMessages?: UnifiedMessage[]
+      }
+    ): Promise<AssistantTaskResult> => {
+      const taskId = options?.taskId || generateId()
+      const res = await fetch("/api/assistant/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          request,
+          clientTaskId: taskId,
+          localThreads: buildAssistantLocalThreads(),
+          currentThread: buildCurrentAssistantThread(options?.currentMessages),
+          previousTask: options?.previousTask || null,
+        }),
+      })
+
+      const data = (await res.json()) as AssistantRunResponse | { error?: string }
+      if (!res.ok || !("task" in data)) {
+        const errorMessage = "error" in data ? data.error : undefined
+        throw new Error(errorMessage || "Assistant failed to run")
+      }
+
+      setAssistantTasks((prev) => ({ ...prev, [data.task.id]: data.task }))
+      return data.task
+    },
+    [buildAssistantLocalThreads, buildCurrentAssistantThread]
+  )
+
+  const handleLoadAssistantSampleWorkspace = useCallback(() => {
+    const sampleThreads = createAssistantDemoThreads()
+    for (const thread of sampleThreads) {
+      SessionChatCache.saveThread(thread)
+    }
+    fetchThreads()
+    toast.success("Sample Assistant workspace loaded", {
+      description: "Demo chats were added to this browser session.",
+    })
+  }, [fetchThreads])
 
   const logRespondCall = useCallback(
     (params: {
@@ -944,6 +1103,12 @@ function UnifiedDemoContent() {
       return
     }
 
+    // Check for @assistant command
+    if (isAssistantCommand(userText)) {
+      await handleAssistantCommand(userText)
+      return
+    }
+
     // Check for @codex command
     if (isCodexCommand(userText)) {
       await handleCodexCommand(userText)
@@ -1032,6 +1197,84 @@ function UnifiedDemoContent() {
       toast.error("Failed to open chat")
     } finally {
       setOpeningChatId(null)
+    }
+  }
+
+  // Handle @assistant command
+  const handleAssistantCommand = async (text: string) => {
+    const prompt = extractAssistantPrompt(text)
+    if (!prompt) {
+      toast.error("Please provide a request after @assistant")
+      return
+    }
+
+    const userMessage: UnifiedMessage = {
+      localId: generateId(),
+      role: "user",
+      text,
+      createdAt: Date.now(),
+    }
+
+    const assistantTaskId = generateId()
+    const taskMessage: UnifiedMessage = {
+      localId: generateId(),
+      role: "assistant",
+      text: "Assistant task",
+      createdAt: Date.now(),
+      assistantTaskId,
+      isAssistantTaskCard: true,
+    }
+
+    const nextMessages = [...messages, userMessage, taskMessage]
+    setAssistantTasks((prev) => ({
+      ...prev,
+      [assistantTaskId]: createPendingAssistantTask(assistantTaskId, prompt),
+    }))
+    setState((prev) => ({
+      ...prev,
+      messages: [...prev.messages, userMessage, taskMessage],
+    }))
+
+    // Persist the visible command message only. Assistant cards are session-level
+    // demo state and do not mutate existing chat history.
+    if (!storedThreadIdRef.current) {
+      const id = await createStoredThread(`@assistant: ${prompt.slice(0, 30)}...`)
+      if (id) {
+        storedThreadIdRef.current = id
+        selfSetChatIdRef.current = id
+        router.replace(`/demos/unified?chatId=${id}`, { scroll: false })
+        await persistMessage(id, {
+          id: userMessage.localId,
+          role: userMessage.role,
+          text: userMessage.text,
+          createdAt: userMessage.createdAt,
+        })
+        fetchThreads()
+      } else {
+        toast.error("Failed to save chat - storage may be unavailable")
+      }
+    } else {
+      await persistMessage(storedThreadIdRef.current, {
+        id: userMessage.localId,
+        role: userMessage.role,
+        text: userMessage.text,
+        createdAt: userMessage.createdAt,
+      })
+    }
+
+    try {
+      await runAssistantTask(prompt, {
+        taskId: assistantTaskId,
+        currentMessages: nextMessages,
+      })
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : "Assistant failed to run"
+      setAssistantTasks((prev) => ({
+        ...prev,
+        [assistantTaskId]: createFailedAssistantTask(assistantTaskId, prompt, errorMessage),
+      }))
+      toast.error(errorMessage)
     }
   }
 
@@ -1848,6 +2091,7 @@ function UnifiedDemoContent() {
     setBranchesByParentLocalId({})
     setActiveBranchId(null)
     setTasks({})
+    setAssistantTasks({})
     setFinderOptions([])
     setInputValue("")
     setAttachedFile(null)
@@ -1885,6 +2129,53 @@ function UnifiedDemoContent() {
   const handleSelectThread = (threadId: string) => {
     if (threadId === storedThreadIdRef.current) return
     router.push(`/demos/unified?chatId=${threadId}`)
+  }
+
+  const handleOpenAssistantChat = (chatId: string) => {
+    if (!chatId || chatId === "current-chat") return
+    handleSelectThread(chatId)
+  }
+
+  const handleInsertAssistantPrompt = (prompt: string) => {
+    setInputValue(prompt)
+    toast.success("Prompt inserted")
+  }
+
+  const handleCloseAssistantTask = (taskId: string) => {
+    setState((prev) => ({
+      ...prev,
+      messages: prev.messages.filter(
+        (message) => (message as UnifiedMessage).assistantTaskId !== taskId
+      ),
+    }))
+    setAssistantTasks((prev) => {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { [taskId]: _removed, ...rest } = prev
+      return rest
+    })
+  }
+
+  const handleAssistantFollowUp = async (text: string, parentTaskId: string) => {
+    const previousTask = assistantTasks[parentTaskId] || null
+    setAssistantTasks((prev) => ({
+      ...prev,
+      [parentTaskId]: createPendingAssistantTask(parentTaskId, text),
+    }))
+
+    try {
+      await runAssistantTask(text, {
+        taskId: parentTaskId,
+        previousTask,
+      })
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : "Assistant failed to run"
+      setAssistantTasks((prev) => ({
+        ...prev,
+        [parentTaskId]: createFailedAssistantTask(parentTaskId, text, errorMessage),
+      }))
+      toast.error(errorMessage)
+    }
   }
 
   // ==========================================================================
@@ -1957,6 +2248,12 @@ function UnifiedDemoContent() {
               <Zap className="h-5 w-5 text-primary" />
               <span className="font-medium">Unified Chat</span>
             </div>
+            <AssistantLauncher
+              onRunTask={runAssistantTask}
+              onLoadSampleWorkspace={handleLoadAssistantSampleWorkspace}
+              onOpenChat={handleOpenAssistantChat}
+              onInsertPrompt={handleInsertAssistantPrompt}
+            />
           </div>
 
           {/* Messages area */}
@@ -1979,6 +2276,10 @@ function UnifiedDemoContent() {
                 <div className="text-xs text-muted-foreground/70 max-w-sm p-3 bg-muted rounded-lg space-y-2">
                   <p>
                     <strong>Features:</strong>
+                  </p>
+                  <p>
+                    <code className="bg-background px-1 rounded">@assistant</code>{" "}
+                    &mdash; Work across chats and recover unfinished work
                   </p>
                   <p>
                     <code className="bg-background px-1 rounded">@codex</code>{" "}
@@ -2006,6 +2307,22 @@ function UnifiedDemoContent() {
               // Messages list
               <div className="p-4 space-y-4">
                 {messages.map((message) => {
+                  // Render AssistantTaskCard for Assistant card messages
+                  if (message.isAssistantTaskCard && message.assistantTaskId) {
+                    const task = assistantTasks[message.assistantTaskId]
+                    if (!task) return null
+                    return (
+                      <AssistantTaskCard
+                        key={`${message.localId}-${message.assistantTaskId}`}
+                        task={task}
+                        onFollowUp={handleAssistantFollowUp}
+                        onClose={() => handleCloseAssistantTask(task.id)}
+                        onOpenChat={handleOpenAssistantChat}
+                        onInsertPrompt={handleInsertAssistantPrompt}
+                      />
+                    )
+                  }
+
                   // Render TaskCard for task messages
                   if (message.isTaskCard && message.taskId) {
                     const task = tasks[message.taskId]
@@ -2132,7 +2449,7 @@ function UnifiedDemoContent() {
                 placeholder={
                   attachedFile
                     ? "Ask about the doc, or say \"read this to me\"..."
-                    : "Type a message, @codex to run a task, or /find to search..."
+                    : "Type a message, @assistant to use Assistant, @codex to run a task, or /find to search..."
                 }
                 disabled={isLoading || isMerging || isGeneratingTTS}
                 rows={1}
