@@ -8,7 +8,7 @@
  * - Consistent error handling
  *
  * Key principles:
- * - GPT-5 series requires reasoning.effort >= "low" (NOT "none")
+ * - Reasoning effort is centrally configurable and falls back when rejected
  * - Never send temperature, top_p, or max_output_tokens
  * - Use text.verbosity for response length control
  */
@@ -34,6 +34,7 @@ export type RequestKind =
   | "stacks" // Smart Stacks categorization (gpt-5-nano, reasoning: low)
   | "finder" // Chat finder reranking (gpt-5-mini, reasoning: low)
   | "codex" // Codex tasks (gpt-5.1-codex-mini, reasoning: low)
+  | "assistant" // Product-level Assistant tasks (gpt-5-mini, reasoning: low)
 
 /**
  * Request kinds that use previous_response_id chaining.
@@ -57,6 +58,7 @@ const DEFAULT_MODELS: Record<RequestKind, string> = {
   stacks: "gpt-5-nano",
   finder: "gpt-5-mini",
   codex: "gpt-5.1-codex-mini",
+  assistant: "gpt-5-mini",
 }
 
 /**
@@ -71,6 +73,7 @@ const MODEL_ENV_VARS: Record<RequestKind, string[]> = {
   stacks: ["OPENAI_MODEL_STACKS"],
   finder: ["OPENAI_MODEL_FINDER"],
   codex: ["OPENAI_MODEL_CODEX"],
+  assistant: ["OPENAI_MODEL_ASSISTANT", "OPENAI_ASSISTANT_MODEL"],
 }
 
 // Track if we've already warned about model mismatch (to avoid spamming logs)
@@ -125,17 +128,15 @@ export function getChainedChatModel(): string {
   return DEFAULT_MODELS.chat_deep
 }
 
-/**
- * Reasoning effort type - GPT-5 supports "minimal", "low", "medium", "high"
- * Note: "none" is NOT supported by GPT-5 series
- */
-type ReasoningEffort = "minimal" | "low" | "medium" | "high"
+type ReasoningEffort = "none" | "minimal" | "low" | "medium" | "high" | "xhigh"
+type TextVerbosity = "low" | "medium" | "high"
 
 /**
  * Reasoning effort for each request kind
  *
- * IMPORTANT: GPT-5 series models do NOT support "none"
- * For summarization, we use "minimal" for fastest performance
+ * Defaults can be overridden by kind-specific env vars. Some model families
+ * support slightly different reasoning values, so unsupported values are
+ * retried where a fallback is configured.
  */
 const REASONING_EFFORT: Record<RequestKind, ReasoningEffort> = {
   chat_fast: "low",
@@ -145,6 +146,7 @@ const REASONING_EFFORT: Record<RequestKind, ReasoningEffort> = {
   stacks: "low",
   finder: "low",
   codex: "low",
+  assistant: "low",
 }
 
 /**
@@ -152,12 +154,24 @@ const REASONING_EFFORT: Record<RequestKind, ReasoningEffort> = {
  */
 const REASONING_EFFORT_FALLBACK: Partial<Record<RequestKind, ReasoningEffort>> = {
   summarize: "low", // Fall back to "low" if "minimal" is rejected
+  assistant: "low",
+}
+
+const REASONING_ENV_VARS: Partial<Record<RequestKind, string[]>> = {
+  chat_fast: ["OPENAI_REASONING_FAST"],
+  chat_deep: ["OPENAI_REASONING_DEEP"],
+  summarize: ["OPENAI_REASONING_SUMMARIZE", "OPENAI_SUMMARY_REASONING"],
+  intent: ["OPENAI_REASONING_INTENT"],
+  stacks: ["OPENAI_REASONING_STACKS"],
+  finder: ["OPENAI_REASONING_FINDER"],
+  codex: ["OPENAI_REASONING_CODEX"],
+  assistant: ["OPENAI_REASONING_ASSISTANT", "OPENAI_ASSISTANT_REASONING"],
 }
 
 /**
  * Text verbosity for each request kind
  */
-const TEXT_VERBOSITY: Record<RequestKind, "low" | "medium" | "high"> = {
+const TEXT_VERBOSITY: Record<RequestKind, TextVerbosity> = {
   chat_fast: "low",
   chat_deep: "low",
   summarize: "low",
@@ -165,6 +179,46 @@ const TEXT_VERBOSITY: Record<RequestKind, "low" | "medium" | "high"> = {
   stacks: "low",
   finder: "low",
   codex: "medium", // Codex needs more verbose output for explanations
+  assistant: "high",
+}
+
+const TEXT_VERBOSITY_ENV_VARS: Partial<Record<RequestKind, string[]>> = {
+  assistant: ["OPENAI_TEXT_VERBOSITY_ASSISTANT", "OPENAI_ASSISTANT_VERBOSITY"],
+}
+
+const VALID_REASONING_EFFORTS = new Set<ReasoningEffort>([
+  "none",
+  "minimal",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+])
+
+const VALID_TEXT_VERBOSITY = new Set<TextVerbosity>(["low", "medium", "high"])
+const invalidConfigWarnings = new Set<string>()
+
+function warnInvalidConfigOnce(envVar: string, value: string, allowed: string): void {
+  const key = `${envVar}:${value}`
+  if (invalidConfigWarnings.has(key)) return
+  console.warn(`[OpenAI] Ignoring invalid ${envVar}="${value}". Allowed values: ${allowed}.`)
+  invalidConfigWarnings.add(key)
+}
+
+function readEnvOverride<T extends string>(
+  envVars: string[],
+  validValues: Set<T>,
+  allowedLabel: string
+): T | null {
+  for (const envVar of envVars) {
+    const value = process.env[envVar]?.trim()
+    if (!value) continue
+    if (validValues.has(value as T)) {
+      return value as T
+    }
+    warnInvalidConfigOnce(envVar, value, allowedLabel)
+  }
+  return null
 }
 
 // =============================================================================
@@ -221,7 +275,12 @@ export function getModel(kind: RequestKind): string {
  * Get the reasoning effort for a request kind
  */
 export function getReasoningEffort(kind: RequestKind): ReasoningEffort {
-  return REASONING_EFFORT[kind]
+  const override = readEnvOverride(
+    REASONING_ENV_VARS[kind] || [],
+    VALID_REASONING_EFFORTS,
+    "none, minimal, low, medium, high, xhigh"
+  )
+  return override ?? REASONING_EFFORT[kind]
 }
 
 /**
@@ -234,8 +293,13 @@ export function getReasoningEffortFallback(kind: RequestKind): ReasoningEffort |
 /**
  * Get the text verbosity for a request kind
  */
-export function getTextVerbosity(kind: RequestKind): "low" | "medium" | "high" {
-  return TEXT_VERBOSITY[kind]
+export function getTextVerbosity(kind: RequestKind): TextVerbosity {
+  const override = readEnvOverride(
+    TEXT_VERBOSITY_ENV_VARS[kind] || [],
+    VALID_TEXT_VERBOSITY,
+    "low, medium, high"
+  )
+  return override ?? TEXT_VERBOSITY[kind]
 }
 
 /**
@@ -269,7 +333,7 @@ type NonStreamingResponseParams = OpenAI.Responses.ResponseCreateParamsNonStream
  *
  * This function ensures:
  * - Correct model is selected
- * - Reasoning effort is set appropriately (GPT-5 supports "minimal", "low", "medium", "high")
+ * - Reasoning effort is set from central defaults or env overrides
  * - Text verbosity is set appropriately
  * - No unsupported parameters are sent
  * - Chained kinds (chat_fast, chat_deep) use store: true for previous_response_id
@@ -300,7 +364,7 @@ function buildCommonParams(
     input,
     store: shouldStore,
     stream: false,
-    reasoning: { effort: reasoning },
+    reasoning: { effort: reasoning } as NonStreamingResponseParams["reasoning"],
     text: {
       format: { type: "text" },
       verbosity,
@@ -443,15 +507,13 @@ export async function createSummarizeResponse(options: {
       throw error
     }
 
-    // Check if the API rejected "minimal" reasoning effort - retry with fallback
+    // Check if the API rejected the configured reasoning effort - retry with fallback
     if (
       config.reasoningFallback &&
       error instanceof OpenAI.APIError &&
-      (error.message.includes("reasoning") || 
-       error.message.includes("minimal") ||
-       error.code === "invalid_parameter_value")
+      isReasoningUnsupportedError(error)
     ) {
-      console.log(`[Summarize] "minimal" reasoning rejected, retrying with "${config.reasoningFallback}"`)
+      console.log(`[Summarize] "${reasoningUsed}" reasoning rejected, retrying with "${config.reasoningFallback}"`)
       reasoningUsed = config.reasoningFallback
 
       try {
@@ -497,6 +559,8 @@ export async function createParsedResponse<T extends z.ZodType>(options: {
   const client = getOpenAIClient()
   const model = getModel(options.kind)
   const reasoning = getReasoningEffort(options.kind)
+  const fallbackReasoning = getReasoningEffortFallback(options.kind)
+  const verbosity = getTextVerbosity(options.kind)
 
   const config = getConfigInfo(options.kind)
   console.log(`[OpenAI:${options.kind}] Parse request:`, {
@@ -505,16 +569,22 @@ export async function createParsedResponse<T extends z.ZodType>(options: {
     schema: options.schemaName,
   })
 
-  try {
-    const response = await client.responses.parse({
+  const attemptParse = async (reasoningToUse: ReasoningEffort) => {
+    return client.responses.parse({
       model,
       input: options.input,
       store: false,
-      reasoning: { effort: reasoning },
+      instructions: options.instructions,
+      reasoning: { effort: reasoningToUse } as NonStreamingResponseParams["reasoning"],
       text: {
         format: zodTextFormat(options.schema, options.schemaName),
+        verbosity,
       },
     })
+  }
+
+  try {
+    const response = await attemptParse(reasoning)
 
     console.log(`[OpenAI:${options.kind}] Parse response:`, {
       id: response.id,
@@ -528,9 +598,46 @@ export async function createParsedResponse<T extends z.ZodType>(options: {
       parsed: response.output_parsed as z.infer<T> | null,
     }
   } catch (error) {
+    if (
+      fallbackReasoning &&
+      fallbackReasoning !== reasoning &&
+      error instanceof OpenAI.APIError &&
+      isReasoningUnsupportedError(error)
+    ) {
+      console.log(
+        `[OpenAI:${options.kind}] "${reasoning}" reasoning rejected, retrying parse with "${fallbackReasoning}"`
+      )
+      try {
+        const response = await attemptParse(fallbackReasoning)
+        console.log(`[OpenAI:${options.kind}] Parse response:fallback`, {
+          id: response.id,
+          status: response.status,
+          model: response.model,
+          hasParsed: !!response.output_parsed,
+        })
+        return {
+          response,
+          parsed: response.output_parsed as z.infer<T> | null,
+        }
+      } catch (fallbackError) {
+        handleOpenAIError(fallbackError, options.kind, config)
+        throw fallbackError
+      }
+    }
     handleOpenAIError(error, options.kind, config)
     throw error
   }
+}
+
+function isReasoningUnsupportedError(error: { message: string; code?: string | null }): boolean {
+  const message = error.message.toLowerCase()
+  return (
+    message.includes("reasoning") ||
+    message.includes("effort") ||
+    message.includes("minimal") ||
+    error.code === "invalid_parameter_value" ||
+    error.code === "unsupported_value"
+  )
 }
 
 // =============================================================================

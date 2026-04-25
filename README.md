@@ -46,7 +46,7 @@ npm run dev
 
 ### Model Configuration
 
-The app uses different models for different request types (chat, summarization, intent classification, code generation, etc.). Defaults are `gpt-5-mini` for chat and search, `gpt-5-nano` for lightweight tasks like summarization and classification, and `gpt-5.1-codex-mini` for code generation. All 8 model overrides are configurable via environment variables -- see [`.env.example`](.env.example) for the complete reference with defaults and explanations.
+The app uses different models for different request types (chat, summarization, intent classification, Assistant artifact generation, code generation, etc.). Defaults are `gpt-5-mini` for chat/search/Assistant, `gpt-5-nano` for lightweight tasks like summarization and classification, and `gpt-5.1-codex-mini` for code generation. Assistant quality can be tuned independently with `OPENAI_MODEL_ASSISTANT`, `OPENAI_ASSISTANT_REASONING`, and `OPENAI_ASSISTANT_VERBOSITY`. See [`.env.example`](.env.example) for the complete reference with defaults and explanations.
 
 ### Storage
 
@@ -68,7 +68,10 @@ You only need one pair. The app detects whichever is available (Upstash checked 
 - **TTL:** All data expires after 7 days to prevent unbounded growth
 - **Namespacing:** Keys are prefixed with user ID (`u:{demo_uid}:...`)
 - **Identity:** Users are identified by a `demo_uid` cookie (no accounts needed)
-- **Status endpoint:** `GET /api/storage` returns current storage status
+- **Status endpoint:** `GET /api/storage` returns current storage status and pings Redis when configured
+- **Heartbeat:** Vercel Cron calls `GET /api/internal/redis-heartbeat` once per day and performs a single Redis `SET` to keep free/low-traffic demo databases active
+
+If a Vercel/Upstash database has been archived or uninstalled due to inactivity, follow [Database Recovery and Heartbeat Setup](docs/database-recovery.md).
 
 ## API Routes
 
@@ -117,6 +120,8 @@ You only need one pair. The app detects whichever is available (Upstash checked 
 | Method | Route | Description |
 |--------|-------|-------------|
 | GET | `/api/storage` | Storage status (type, configured, warnings) |
+| GET | `/api/health` | Redis connectivity diagnostics |
+| GET | `/api/internal/redis-heartbeat` | Protected Vercel Cron endpoint that writes a daily heartbeat key |
 
 ## Demo Scripts
 

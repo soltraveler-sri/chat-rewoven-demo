@@ -1,4 +1,5 @@
 import { makeAssistantArtifact, rowsToCsv, slugifyFilenamePart } from "@/lib/assistant/artifacts"
+import { generateAssistantDocumentArtifact } from "@/lib/assistant/generation"
 import type {
   AssistantArtifact,
   AssistantChatThreadInput,
@@ -163,6 +164,26 @@ function truncate(text: string, max = MAX_SNIPPET): string {
   return `${cleaned.slice(0, max - 3).trim()}...`
 }
 
+function displayTitleForThread(thread: AssistantChatThreadInput): string {
+  const title = thread.title?.trim()
+  if (title && title.toLowerCase() !== "new chat") {
+    return title
+  }
+
+  const firstUserMessage = thread.messages.find(
+    (message) =>
+      message.role === "user" &&
+      message.text?.trim() &&
+      !message.isTaskCard &&
+      !isAssistantControlMessage(message.text)
+  )
+  if (firstUserMessage?.text) {
+    return truncate(firstUserMessage.text.replace(/^@\w+\s+/i, ""), 72)
+  }
+
+  return title || "Untitled chat"
+}
+
 function isAssistantControlMessage(text: string): boolean {
   return text.trim().toLowerCase().startsWith("@assistant ")
 }
@@ -179,7 +200,12 @@ function isAssistantOnlyThread(thread: AssistantChatThreadInput): boolean {
 
 function transcriptForThread(thread: AssistantChatThreadInput): string {
   const lines = thread.messages
-    .filter((message) => message.text?.trim() && !isAssistantControlMessage(message.text))
+    .filter(
+      (message) =>
+        message.text?.trim() &&
+        !message.isTaskCard &&
+        !isAssistantControlMessage(message.text)
+    )
     .map((message) => `${message.role}: ${message.text}`)
   return lines.join("\n").slice(0, MAX_THREAD_TEXT)
 }
@@ -328,7 +354,7 @@ function findSnippet(thread: AssistantChatThreadInput, tokens: string[]): string
 function sourcesFromScored(scored: ScoredThread[]): AssistantSource[] {
   return scored.map((item) => ({
     chatId: item.thread.id,
-    title: item.thread.title,
+    title: displayTitleForThread(item.thread),
     updatedAt: item.thread.updatedAt,
     reason: item.reason,
     snippet: item.snippet,
@@ -394,7 +420,7 @@ function extractLiftingRows(scored: ScoredThread[]): LiftingCsvRow[] {
             : "current strength"
 
         rows.push({
-          sourceChatTitle: item.thread.title,
+          sourceChatTitle: displayTitleForThread(item.thread),
           sourceChatId: item.thread.id,
           dateOrTimeframe: extractTimeframe(segment, item.thread),
           category,
@@ -505,19 +531,28 @@ function buildDocumentArtifact(request: string, scored: ScoredThread[]): {
   }
 
   const lower = request.toLowerCase()
-  const sequence =
-    lower.includes("calculus")
-      ? [
-          "Functions, graphs, and prerequisite review",
-          "Limits and continuity",
-          "Derivative rules and interpretation",
-          "Applications of derivatives",
-          "Basic integrals and the fundamental theorem",
-          "Integration techniques",
-          "Infinite series and Taylor polynomials",
-          "Mixed review and applied problems",
-        ]
-      : bullets.map((bullet) => bullet.replace(/^[-*]\s*/, ""))
+  const suggestedStructure = lower.includes("calculus")
+    ? [
+        "Functions, graphs, and prerequisite review",
+        "Limits and continuity",
+        "Derivative rules and interpretation",
+        "Applications of derivatives",
+        "Basic integrals and the fundamental theorem",
+        "Integration techniques",
+        "Infinite series and Taylor polynomials",
+        "Mixed review and applied problems",
+      ]
+    : [
+        "Key context gathered from matching chats",
+        "Decisions or recommendations explicitly supported by the chats",
+        "Source notes to review before using the artifact",
+        "Missing details to confirm",
+      ]
+
+  const sourceNotes = scored.slice(0, 6).map((item) => {
+    const title = displayTitleForThread(item.thread)
+    return `- ${title} (${item.thread.id}): ${item.snippet}`
+  })
 
   const content = [
     `# ${title}`,
@@ -525,14 +560,17 @@ function buildDocumentArtifact(request: string, scored: ScoredThread[]): {
     "## Interpreted Goal",
     interpretedGoalFor("cross_chat_artifact", request),
     "",
-    "## Context Extracted",
+    "## What I Found",
     ...bullets.map((bullet) => `- ${bullet}`),
     "",
-    "## Organized Plan",
-    ...sequence.map((item, index) => `${index + 1}. ${item}`),
+    "## Suggested Artifact Structure",
+    ...suggestedStructure.map((item, index) => `${index + 1}. ${item}`),
+    "",
+    "## Source Notes",
+    ...sourceNotes,
     "",
     "## Sources Used",
-    ...scored.map((item) => `- ${item.thread.title} (${item.thread.id}): ${item.snippet}`),
+    ...scored.map((item) => `- ${displayTitleForThread(item.thread)} (${item.thread.id}): ${item.reason}`),
     "",
     "## Missing or Ambiguous Information",
     "- Timing, exact workload, and mastery checks should be confirmed by the user.",
@@ -570,7 +608,7 @@ function buildCodexPrompt(thread: AssistantChatThreadInput, reason: string): str
 
   return [
     "@codex",
-    `Use the context from "${thread.title}" to finish the unresolved implementation work.`,
+    `Use the context from "${displayTitleForThread(thread)}" to finish the unresolved implementation work.`,
     "",
     "Context:",
     recent,
@@ -635,7 +673,7 @@ function detectOpenLoop(thread: AssistantChatThreadInput, codexOnly: boolean): A
 
   return {
     id: `${thread.id}-open-loop`,
-    chatTitle: thread.title,
+    chatTitle: displayTitleForThread(thread),
     chatId: thread.id,
     lastUpdated: thread.updatedAt,
     reason,
@@ -741,7 +779,7 @@ export function mergeAssistantThreads(
   return Array.from(map.values()).sort((a, b) => b.updatedAt - a.updatedAt)
 }
 
-export function createAssistantTaskResult(args: {
+export async function createAssistantTaskResult(args: {
   id: string
   request: string
   threads: AssistantChatThreadInput[]
@@ -752,7 +790,7 @@ export function createAssistantTaskResult(args: {
     resultSummary: string
     sources: AssistantSource[]
   } | null
-}): AssistantTaskResult {
+}): Promise<AssistantTaskResult> {
   const now = Date.now()
   const taskKind = classifyTaskKind(args.request)
   const interpretedGoal = interpretedGoalFor(taskKind, args.request)
@@ -784,10 +822,41 @@ export function createAssistantTaskResult(args: {
   const scored = selectRelevantThreads(args.request, args.threads)
   const sources = sourcesFromScored(scored)
   const lower = args.request.toLowerCase()
-  const artifactResult =
+  let artifactResult =
     lower.includes("lifting") || lower.includes("spreadsheet") || lower.includes("csv")
       ? buildLiftingArtifact(args.request, scored)
       : buildDocumentArtifact(args.request, scored)
+
+  if (
+    scored.length > 0 &&
+    !(lower.includes("lifting") || lower.includes("spreadsheet") || lower.includes("csv"))
+  ) {
+    const modelArtifact = await generateAssistantDocumentArtifact({
+      request: args.request,
+      interpretedGoal,
+      title: inferDocumentTitle(args.request),
+      sources: scored.slice(0, 8).map((item) => ({
+        chatId: item.thread.id,
+        title: displayTitleForThread(item.thread),
+        updatedAt: item.thread.updatedAt,
+        reason: item.reason,
+        snippet: item.snippet,
+        transcript: transcriptForThread(item.thread),
+      })),
+    })
+
+    if (modelArtifact) {
+      artifactResult = modelArtifact
+    } else if (artifactResult.artifact) {
+      artifactResult = {
+        ...artifactResult,
+        missingInfo: [
+          ...artifactResult.missingInfo,
+          "Model-assisted synthesis was unavailable, so this demo used a deterministic organizer.",
+        ],
+      }
+    }
+  }
 
   const proposedActions: AssistantProposedAction[] = []
   if (artifactResult.artifact) {

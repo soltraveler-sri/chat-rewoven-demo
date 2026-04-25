@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { getChatStore } from "@/lib/store"
 import {
-  createTextResponse,
+  createSummarizeResponse,
   extractTextOutput,
   formatOpenAIError,
   getConfigInfo,
@@ -33,6 +33,22 @@ function buildTranscriptForSummary(
       return `${role}: ${text}`
     })
     .join("\n")
+}
+
+function buildFallbackSummary(messages: Array<{ role: string; text: string }>): string {
+  const substantive = messages
+    .filter((message) => message.text?.trim())
+    .slice(-6)
+    .map((message) => {
+      const text = message.text.replace(/\s+/g, " ").trim()
+      return `${message.role === "user" ? "User" : "Assistant"}: ${text.slice(0, 160)}`
+    })
+
+  if (substantive.length === 0) {
+    return "No messages in this conversation."
+  }
+
+  return substantive.join(" | ").slice(0, 360)
 }
 
 /**
@@ -102,17 +118,21 @@ Summary:`
       `[Summary] Generating summary for chat ${id} with model ${config.model}`
     )
 
-    const response = await createTextResponse({
-      kind: "summarize",
-      input: prompt,
-    })
-
-    // Extract summary from response
-    let summary = extractTextOutput(response).trim()
+    let summary = ""
+    try {
+      const { response } = await createSummarizeResponse({
+        input: prompt,
+        instructions: "You are a concise chat summarizer. Output only the summary text.",
+      })
+      summary = extractTextOutput(response).trim()
+    } catch (error) {
+      console.error("[Summary] Model summary failed, using fallback:", error)
+      summary = buildFallbackSummary(thread.messages)
+    }
 
     if (!summary) {
       console.warn("[Summary] Empty summary generated, using fallback")
-      summary = "Summary unavailable."
+      summary = buildFallbackSummary(thread.messages)
     }
 
     // Save summary back to thread
