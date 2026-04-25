@@ -60,6 +60,8 @@ interface StorageInfo {
 interface StorageApiResponse {
   storageType?: "kv" | "memory"
   kvConfigured?: boolean
+  healthy?: boolean
+  connectivity?: "ok" | "error" | "timeout" | "not_configured"
   warning?: string
 }
 
@@ -68,19 +70,25 @@ interface StorageApiResponse {
  */
 function parseStorageResponse(data: StorageApiResponse): StorageInfo {
   const storageType = data?.storageType
-  const type: StorageInfo["type"] =
-    storageType === "kv" || storageType === "memory" ? storageType : "error"
+  const configuredButUnhealthy = data?.kvConfigured && data?.healthy === false
+  const type: StorageInfo["type"] = configuredButUnhealthy
+    ? "error"
+    : storageType === "kv" || storageType === "memory"
+      ? storageType
+      : "error"
 
   return {
     type,
-    available: data?.kvConfigured ?? false,
+    available: Boolean(data?.kvConfigured && data?.healthy !== false),
     message:
       data?.warning ??
       (type === "kv"
-        ? "Using Vercel KV for persistent storage."
+        ? "Using Redis/KV for persistent storage."
         : type === "memory"
           ? "Using in-memory store. Data may reset."
-          : "Unable to determine storage status."),
+          : data?.connectivity
+            ? `Storage check failed: ${data.connectivity}.`
+            : "Unable to determine storage status."),
   }
 }
 

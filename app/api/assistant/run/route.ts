@@ -116,7 +116,7 @@ export async function POST(request: NextRequest) {
       parsed.data.currentThread || null
     )
 
-    const task = createAssistantTaskResult({
+    const task = await createAssistantTaskResult({
       id: taskId,
       request: requestText,
       threads,

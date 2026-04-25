@@ -14,6 +14,7 @@
 import { NextResponse } from "next/server"
 import { createClient } from "@vercel/kv"
 
+export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 
 const HEARTBEAT_KEY = "__system:redis_heartbeat"
@@ -67,7 +68,13 @@ export async function GET(request: Request): Promise<NextResponse> {
       `[redis-heartbeat] OK key=${HEARTBEAT_KEY} ranAt=${ranAt}`
     )
 
-    return NextResponse.json({ ok: true, key: HEARTBEAT_KEY, ranAt })
+    return NextResponse.json({
+      ok: true,
+      key: HEARTBEAT_KEY,
+      command: "SET",
+      ttlSeconds: TTL_SECONDS,
+      ranAt,
+    })
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     console.error(`[redis-heartbeat] FAIL error=${message}`)

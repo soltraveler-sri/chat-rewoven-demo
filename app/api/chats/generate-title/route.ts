@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import { createTextResponse, extractTextOutput, getConfigInfo } from "@/lib/openai"
+import { createSummarizeResponse, extractTextOutput, getConfigInfo } from "@/lib/openai"
 
 export const runtime = "nodejs"
 
@@ -10,7 +10,38 @@ interface GenerateTitleRequest {
   assistantMessage: string
 }
 
+function deriveFallbackTitle(userMessage: string): string {
+  const cleaned = userMessage
+    .replace(/^@\w+\s+/i, "")
+    .replace(/\s+/g, " ")
+    .trim()
+  if (!cleaned) return "New Chat"
+
+  const firstThought = cleaned.split(/[.!?\n]/)[0]?.trim() || cleaned
+  const words = firstThought.split(/\s+/).slice(0, 8)
+  const title = words.join(" ").replace(/[:;,]+$/g, "").trim()
+  if (!title) return "New Chat"
+  return title.charAt(0).toUpperCase() + title.slice(1)
+}
+
+function cleanGeneratedTitle(title: string, fallback: string): string {
+  const cleaned = title
+    .trim()
+    .replace(/^["']|["']$/g, "")
+    .replace(/\s+/g, " ")
+    .replace(/[.!?]+$/g, "")
+    .slice(0, 80)
+    .trim()
+
+  if (!cleaned || cleaned.toLowerCase() === "new chat") {
+    return fallback
+  }
+  return cleaned
+}
+
 export async function POST(request: NextRequest) {
+  let fallbackTitle = "New Chat"
+
   try {
     const body = (await request.json()) as GenerateTitleRequest
 
@@ -21,6 +52,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    fallbackTitle = deriveFallbackTitle(body.userMessage)
     const transcript = `User: ${body.userMessage}\nAssistant: ${body.assistantMessage}`
     const prompt = `${TITLE_PROMPT}\n\n${transcript}`
 
@@ -30,19 +62,18 @@ export async function POST(request: NextRequest) {
       console.log(`[GenerateTitle] Using model: ${config.model}`)
     }
 
-    const response = await createTextResponse({
-      kind: "summarize",
+    const { response } = await createSummarizeResponse({
       input: [{ role: "user", content: prompt }],
       instructions: "You are a chat title generator. Output only the title, nothing else.",
-      storeOverride: false,
     })
 
-    const title = extractTextOutput(response).trim().replace(/^["']|["']$/g, "")
+    const title = cleanGeneratedTitle(extractTextOutput(response), fallbackTitle)
 
     return NextResponse.json({ title })
   } catch (error) {
     console.error("[GenerateTitle] Error:", error)
-    // Non-critical — return a fallback
-    return NextResponse.json({ title: null }, { status: 200 })
+    // Non-critical: return a deterministic title so the sidebar does not get stuck
+    // on "New Chat" when the title model or Redis path is degraded.
+    return NextResponse.json({ title: fallbackTitle }, { status: 200 })
   }
 }

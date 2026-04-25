@@ -9,6 +9,8 @@ interface StorageStatus {
   kvConfigured: boolean
   mode?: "redis" | "memory"
   backend?: "upstash" | "vercel_kv" | "memory"
+  healthy?: boolean
+  connectivity?: "ok" | "error" | "timeout" | "not_configured"
   warning?: string
 }
 
@@ -21,7 +23,7 @@ interface StorageWarningBannerProps {
  * in memory mode (without Redis configured).
  *
  * Fetches /api/storage on mount and shows a dismissible warning if
- * mode !== "redis".
+ * mode !== "redis", or Redis is configured but the health check fails.
  */
 export function StorageWarningBanner({ className }: StorageWarningBannerProps) {
   const [status, setStatus] = useState<StorageStatus | null>(null)
@@ -50,8 +52,12 @@ export function StorageWarningBanner({ className }: StorageWarningBannerProps) {
     return null
   }
 
-  // Don't show if Redis is configured (check both old and new fields for compatibility)
-  if (!status || status.mode === "redis" || status.storageType === "kv") {
+  // Don't show if Redis is configured and reachable.
+  const storageLooksHealthy =
+    (status?.mode === "redis" || status?.storageType === "kv") &&
+    status?.healthy !== false
+
+  if (!status || storageLooksHealthy) {
     return null
   }
 
