@@ -1,6 +1,6 @@
 "use client"
 
-import { FormEvent, useState } from "react"
+import { FormEvent, useEffect, useState } from "react"
 import {
   AlertCircle,
   ChevronDown,
@@ -22,6 +22,7 @@ import {
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { MarkdownContent } from "@/components/ui/markdown-content"
+import { docxFilenameFor, makeDocxBlobFromMarkdown } from "@/lib/assistant/docx"
 import { cn } from "@/lib/utils"
 import type {
   AssistantArtifact,
@@ -75,12 +76,31 @@ const TASK_KIND_LABELS: Record<AssistantTaskResult["taskKind"], string> = {
   clarification: "Assistant",
 }
 
+const WORKING_STEPS = [
+  "Interpreting the request",
+  "Reviewing relevant chats",
+  "Checking evidence",
+  "Preparing the result",
+]
+
 function downloadArtifact(artifact: AssistantArtifact) {
   const blob = new Blob([artifact.content], { type: artifact.mimeType })
   const url = URL.createObjectURL(blob)
   const link = document.createElement("a")
   link.href = url
   link.download = artifact.filename
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  URL.revokeObjectURL(url)
+}
+
+function downloadDocxArtifact(artifact: AssistantArtifact) {
+  const blob = makeDocxBlobFromMarkdown(artifact.content, artifact.filename)
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement("a")
+  link.href = url
+  link.download = docxFilenameFor(artifact.filename)
   document.body.appendChild(link)
   link.click()
   link.remove()
@@ -102,37 +122,59 @@ function copyText(text: string, label = "Copied") {
   toast.success(label)
 }
 
-function ProgressList({ task }: { task: AssistantTaskResult }) {
-  const steps: Array<{ status: AssistantTaskStatus; label: string }> = [
-    { status: "interpreting", label: "Interpreted request" },
-    { status: "searching", label: "Reviewed available chats" },
-    { status: "reviewing", label: "Checked evidence" },
-    { status: "generating", label: "Prepared result" },
-  ]
+function useWorkingStep(isWorking: boolean, createdAt: number): number {
+  const [now, setNow] = useState(() => Date.now())
 
-  const done = new Set(task.progress)
-  const isRunning = !TERMINAL_STATUSES.has(task.status)
+  useEffect(() => {
+    if (!isWorking) return
+    const interval = window.setInterval(() => setNow(Date.now()), 900)
+    return () => window.clearInterval(interval)
+  }, [isWorking])
 
+  const elapsedMs = Math.max(0, now - createdAt)
+  return Math.min(WORKING_STEPS.length - 1, Math.floor(elapsedMs / 1600))
+}
+
+function WorkingState({
+  stepIndex,
+  compact = false,
+}: {
+  stepIndex: number
+  compact?: boolean
+}) {
   return (
-    <div className="flex flex-wrap gap-2">
-      {steps.map((step) => {
-        const complete = done.has(step.status) || task.status === "ready" || task.status === "no_results"
-        return (
-          <div
-            key={step.status}
-            className="flex h-8 min-w-[150px] flex-1 items-center gap-2 rounded-md border border-border/60 bg-background/60 px-2.5 text-xs"
-          >
-            {complete ? (
-              <Check className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
-            ) : isRunning ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
-            ) : (
-              <span className="h-3.5 w-3.5 rounded-full border border-border" />
-            )}
-            <span className="truncate">{step.label}</span>
-          </div>
-        )
-      })}
+    <div className="rounded-lg border border-teal-500/15 bg-teal-500/5 px-3 py-3">
+      <div className="flex items-center gap-2 text-sm">
+        <Loader2 className="h-4 w-4 animate-spin text-teal-700 dark:text-teal-300" />
+        <span className="font-medium">{WORKING_STEPS[stepIndex]}</span>
+      </div>
+      <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-background">
+        <div
+          className="h-full rounded-full bg-teal-600 transition-all duration-500 dark:bg-teal-300"
+          style={{ width: `${((stepIndex + 1) / WORKING_STEPS.length) * 100}%` }}
+        />
+      </div>
+      {!compact && (
+        <div className="mt-2 flex items-center gap-2 text-[11px] text-muted-foreground">
+          {WORKING_STEPS.map((step, index) => (
+            <div key={step} className="flex min-w-0 items-center gap-1.5">
+              {index < stepIndex ? (
+                <Check className="h-3 w-3 shrink-0 text-emerald-600 dark:text-emerald-400" />
+              ) : (
+                <span
+                  className={cn(
+                    "h-2 w-2 shrink-0 rounded-full",
+                    index === stepIndex ? "bg-teal-600 dark:bg-teal-300" : "bg-muted-foreground/25"
+                  )}
+                />
+              )}
+              <span className={cn("truncate", index === stepIndex && "text-foreground")}>
+                {step}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
@@ -140,9 +182,11 @@ function ProgressList({ task }: { task: AssistantTaskResult }) {
 function SourceList({
   sources,
   onOpenChat,
+  dense = false,
 }: {
   sources: AssistantSource[]
   onOpenChat?: (chatId: string) => void
+  dense?: boolean
 }) {
   if (sources.length === 0) {
     return (
@@ -157,7 +201,10 @@ function SourceList({
       {sources.slice(0, 5).map((source) => (
         <div
           key={`${source.chatId}-${source.title}`}
-          className="rounded-lg border border-border/70 bg-background/60 px-3 py-2.5"
+          className={cn(
+            "rounded-lg border border-border/70 bg-background/60",
+            dense ? "px-2.5 py-2" : "px-3 py-2.5"
+          )}
         >
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
@@ -179,7 +226,7 @@ function SourceList({
               </Button>
             )}
           </div>
-          {source.snippet && (
+          {source.snippet && !dense && (
             <p className="mt-2 rounded-md bg-muted/50 px-2 py-1.5 text-xs leading-relaxed text-muted-foreground">
               {source.snippet}
             </p>
@@ -191,6 +238,8 @@ function SourceList({
 }
 
 function ArtifactPanel({ artifact }: { artifact: AssistantArtifact }) {
+  const supportsDocx = artifact.kind === "markdown"
+
   return (
     <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 px-3 py-3">
       <div className="flex items-center justify-between gap-3">
@@ -205,15 +254,29 @@ function ArtifactPanel({ artifact }: { artifact: AssistantArtifact }) {
             </p>
           </div>
         </div>
-        <Button
-          type="button"
-          size="sm"
-          className="h-8 shrink-0 gap-1.5"
-          onClick={() => downloadArtifact(artifact)}
-        >
-          <Download className="h-3.5 w-3.5" />
-          Download
-        </Button>
+        <div className="flex shrink-0 items-center gap-2">
+          <Button
+            type="button"
+            variant={supportsDocx ? "outline" : "default"}
+            size="sm"
+            className="h-8 gap-1.5"
+            onClick={() => downloadArtifact(artifact)}
+          >
+            <Download className="h-3.5 w-3.5" />
+            {supportsDocx ? "Markdown" : "Download"}
+          </Button>
+          {supportsDocx && (
+            <Button
+              type="button"
+              size="sm"
+              className="h-8 gap-1.5"
+              onClick={() => downloadDocxArtifact(artifact)}
+            >
+              <FileText className="h-3.5 w-3.5" />
+              DOCX
+            </Button>
+          )}
+        </div>
       </div>
     </div>
   )
@@ -250,6 +313,75 @@ function ArtifactPreview({
         )}
       </div>
     </div>
+  )
+}
+
+function SourcesDetails({
+  task,
+  onOpenChat,
+}: {
+  task: AssistantTaskResult
+  onOpenChat?: (chatId: string) => void
+}) {
+  const hasSources = task.sources.length > 0
+  const label = hasSources
+    ? `${task.sources.length} source${task.sources.length === 1 ? "" : "s"} used`
+    : "No matching sources"
+
+  if (!hasSources) {
+    return (
+      <div className="flex items-center gap-2 rounded-lg border border-dashed border-border px-3 py-2 text-xs text-muted-foreground">
+        <Search className="h-3.5 w-3.5" />
+        <span>{label}</span>
+        <span>•</span>
+        <span>{task.reviewedChatCount} reviewed</span>
+      </div>
+    )
+  }
+
+  return (
+    <details className="group rounded-lg border border-border/70 bg-muted/20">
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2">
+        <div className="flex min-w-0 items-center gap-2">
+          <Search className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+          <p className="text-[10px] font-medium uppercase text-muted-foreground">
+            Sources Used
+          </p>
+          <span className="truncate text-xs text-muted-foreground">
+            {label} • {task.reviewedChatCount} reviewed
+          </span>
+        </div>
+        <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform group-open:rotate-180" />
+      </summary>
+      <div className="border-t border-border/70 p-2">
+        <SourceList sources={task.sources} onOpenChat={onOpenChat} dense />
+      </div>
+    </details>
+  )
+}
+
+function MissingInfoDetails({ items }: { items?: string[] }) {
+  if (!items?.length) return null
+
+  return (
+    <details className="group rounded-lg border border-border/70 bg-muted/20">
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2">
+        <div className="min-w-0">
+          <p className="text-[10px] font-medium uppercase text-muted-foreground">
+            Missing or Ambiguous
+          </p>
+          <p className="truncate text-xs text-muted-foreground">
+            {items.length} item{items.length === 1 ? "" : "s"} to confirm
+          </p>
+        </div>
+        <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform group-open:rotate-180" />
+      </summary>
+      <ul className="space-y-1 border-t border-border/70 px-3 py-2 text-xs text-muted-foreground">
+        {items.map((item) => (
+          <li key={item}>- {item}</li>
+        ))}
+      </ul>
+    </details>
   )
 }
 
@@ -338,18 +470,17 @@ function OpenLoopItem({
 
 function ProposedActions({
   actions,
-  artifact,
-  onOpenChat,
   onInsertPrompt,
 }: {
   actions: AssistantProposedAction[]
-  artifact?: AssistantArtifact
-  onOpenChat?: (chatId: string) => void
   onInsertPrompt?: (prompt: string) => void
 }) {
   const actionable = actions.filter(
     (action, index, all) =>
-      index === all.findIndex((candidate) => candidate.type === action.type && candidate.chatId === action.chatId)
+      action.type === "insert_codex_prompt" &&
+      action.prompt &&
+      onInsertPrompt &&
+      index === all.findIndex((candidate) => candidate.type === action.type && candidate.prompt === action.prompt)
   )
 
   if (actionable.length === 0) return null
@@ -357,36 +488,6 @@ function ProposedActions({
   return (
     <div className="flex flex-wrap gap-2">
       {actionable.slice(0, 5).map((action) => {
-        if (action.type === "download_artifact" && artifact) {
-          return (
-            <Button
-              key={action.id}
-              type="button"
-              variant="outline"
-              size="sm"
-              className="h-8 gap-1.5"
-              onClick={() => downloadArtifact(artifact)}
-            >
-              <Download className="h-3.5 w-3.5" />
-              {action.label}
-            </Button>
-          )
-        }
-        if (action.type === "open_chat" && action.chatId && onOpenChat) {
-          return (
-            <Button
-              key={action.id}
-              type="button"
-              variant="outline"
-              size="sm"
-              className="h-8 gap-1.5"
-              onClick={() => onOpenChat(action.chatId!)}
-            >
-              <ExternalLink className="h-3.5 w-3.5" />
-              {action.label}
-            </Button>
-          )
-        }
         if (action.type === "insert_codex_prompt" && action.prompt && onInsertPrompt) {
           return (
             <Button
@@ -427,6 +528,7 @@ export function AssistantTaskCard({
     open: Boolean(task.artifact) && !compact,
   }))
   const isWorking = !TERMINAL_STATUSES.has(task.status)
+  const workingStep = useWorkingStep(isWorking, task.createdAt)
   const artifactFilename = task.artifact?.filename
   const showArtifactPreview =
     artifactPreviewState.filename === artifactFilename
@@ -491,15 +593,15 @@ export function AssistantTaskCard({
   }
 
   const followUpForm = onFollowUp ? (
-    <form onSubmit={handleFollowUp} className="flex items-end gap-2 border-t border-border/70 pt-3">
+    <form onSubmit={handleFollowUp} className="flex items-center gap-2 rounded-lg border border-border/70 bg-background/60 p-2">
       <textarea
         value={followUp}
         onChange={(event) => setFollowUp(event.target.value)}
         placeholder="Follow up with Assistant..."
         rows={1}
-        className="min-h-9 flex-1 resize-none rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-1 focus-visible:ring-ring"
+        className="min-h-8 flex-1 resize-none bg-transparent px-1 py-1 text-sm outline-none placeholder:text-muted-foreground focus-visible:ring-0"
       />
-      <Button type="submit" size="sm" disabled={!followUp.trim()}>
+      <Button type="submit" size="sm" className="h-8" disabled={!followUp.trim()}>
         Send
       </Button>
     </form>
@@ -548,10 +650,7 @@ export function AssistantTaskCard({
           </div>
 
           {isWorking ? (
-            <div className="flex items-center gap-2 rounded-lg bg-muted/50 px-3 py-2 text-sm text-muted-foreground">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              Reviewing chats and preparing the result...
-            </div>
+            <WorkingState stepIndex={workingStep} compact />
           ) : (
             <>
               {task.status === "failed" && (
@@ -594,7 +693,7 @@ export function AssistantTaskCard({
                       <ChevronUp className="hidden h-3 w-3 group-open:block" />
                     </summary>
                     <div className="mt-2 min-w-[320px]">
-                      <SourceList sources={task.sources} onOpenChat={onOpenChat} />
+                      <SourceList sources={task.sources} onOpenChat={onOpenChat} dense />
                     </div>
                   </details>
                 )}
@@ -656,13 +755,7 @@ export function AssistantTaskCard({
 
       <div className="space-y-4 p-4">
         {isWorking && (
-          <>
-            <ProgressList task={task} />
-            <div className="flex items-center gap-2 rounded-lg bg-muted/50 px-3 py-2 text-sm text-muted-foreground">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              Reviewing available chat context...
-            </div>
-          </>
+          <WorkingState stepIndex={workingStep} />
         )}
 
         {!isWorking && (
@@ -714,36 +807,12 @@ export function AssistantTaskCard({
               </div>
             )}
 
-            <div>
-              <div className="mb-2 flex items-center gap-2">
-                <Search className="h-3.5 w-3.5 text-muted-foreground" />
-                <p className="text-[10px] font-medium uppercase text-muted-foreground">
-                  Sources Used
-                </p>
-                <span className="text-[10px] text-muted-foreground">
-                  {task.reviewedChatCount} reviewed
-                </span>
-              </div>
-              <SourceList sources={task.sources} onOpenChat={onOpenChat} />
-            </div>
+            <SourcesDetails task={task} onOpenChat={onOpenChat} />
 
-            {task.missingInfo && task.missingInfo.length > 0 && (
-              <div className="rounded-lg border border-border/70 bg-muted/30 px-3 py-2">
-                <p className="mb-1 text-[10px] font-medium uppercase text-muted-foreground">
-                  Missing or Ambiguous
-                </p>
-                <ul className="space-y-1 text-xs text-muted-foreground">
-                  {task.missingInfo.map((item) => (
-                    <li key={item}>- {item}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
+            <MissingInfoDetails items={task.missingInfo} />
 
             <ProposedActions
               actions={task.proposedActions}
-              artifact={task.artifact}
-              onOpenChat={onOpenChat}
               onInsertPrompt={onInsertPrompt}
             />
 
