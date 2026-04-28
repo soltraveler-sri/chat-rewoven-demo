@@ -18,6 +18,10 @@ export function rowsToCsv<T extends object>(headers: string[], rows: T[]): strin
   return lines.join("\n")
 }
 
+export function sanitizeArtifactContent(content: string): string {
+  return content.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "")
+}
+
 export function makeAssistantArtifact(args: {
   kind: AssistantArtifactKind
   filename: string
@@ -31,7 +35,8 @@ export function makeAssistantArtifact(args: {
     html: "text/html;charset=utf-8",
   }
 
-  const byteCount = new TextEncoder().encode(args.content).length
+  const content = sanitizeArtifactContent(args.content)
+  const byteCount = new TextEncoder().encode(content).length
   const sizeLabel =
     byteCount < 1024
       ? `${byteCount} B`
@@ -41,7 +46,7 @@ export function makeAssistantArtifact(args: {
     kind: args.kind,
     filename: args.filename,
     mimeType: mimeTypeByKind[args.kind],
-    content: args.content,
+    content,
     rowCount: args.rowCount,
     sizeLabel,
   }
