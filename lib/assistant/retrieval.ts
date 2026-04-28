@@ -110,6 +110,31 @@ const DOMAIN_TERMS: Record<string, string[]> = {
     "prep",
     "leadership",
   ],
+  golf: [
+    "golf",
+    "golfer",
+    "swing",
+    "club",
+    "driver",
+    "iron",
+    "speed",
+    "mobility",
+    "rotator",
+    "shoulder",
+    "performance",
+    "training",
+  ],
+  nutrition: [
+    "nutrition",
+    "diet",
+    "protein",
+    "carbs",
+    "calories",
+    "meals",
+    "recovery",
+    "sleep",
+    "bodyweight",
+  ],
 }
 
 const OPEN_LOOP_TERMS = [
@@ -246,7 +271,12 @@ function classifyTaskKind(request: string): AssistantTaskKind {
     lower.includes("curriculum") ||
     lower.includes("study guide") ||
     lower.includes("brief") ||
-    lower.includes("document")
+    lower.includes("document") ||
+    lower.includes("plan") ||
+    lower.includes("overview") ||
+    lower.includes("reference") ||
+    lower.includes("synthesize") ||
+    lower.includes("compile")
   ) {
     return "cross_chat_artifact"
   }
@@ -271,6 +301,15 @@ function interpretedGoalFor(kind: AssistantTaskKind, request: string): string {
   }
   if (kind === "cross_chat_artifact" && lower.includes("curriculum")) {
     return "Collect relevant learning chats and turn the available context into a downloadable curriculum document."
+  }
+  if (kind === "cross_chat_artifact" && lower.includes("plan")) {
+    return "Synthesize relevant chats into a practical downloadable plan with evidence, priorities, and open questions."
+  }
+  if (
+    kind === "cross_chat_artifact" &&
+    (lower.includes("overview") || lower.includes("reference") || lower.includes("personal numbers"))
+  ) {
+    return "Create a concise reference artifact from the user's stated details across relevant chats."
   }
   if (kind === "cross_chat_artifact") {
     return "Collect relevant chats, organize the available context, and generate a downloadable artifact."
@@ -487,6 +526,10 @@ function buildLiftingArtifact(request: string, scored: ScoredThread[]): {
 function inferDocumentTitle(request: string): string {
   const lower = request.toLowerCase()
   if (lower.includes("calculus")) return "Calculus Curriculum"
+  if (lower.includes("golf") && lower.includes("plan")) return "6-8 Week Golf Performance Plan"
+  if (lower.includes("personal") && (lower.includes("number") || lower.includes("info"))) {
+    return "Personal Numbers and Reference Overview"
+  }
   if (lower.includes("product") || lower.includes("pm ")) return "Product Management Study Guide"
   if (lower.includes("brief")) return "Assistant Brief"
   return "Assistant Workspace Document"
@@ -792,8 +835,20 @@ export async function createAssistantTaskResult(args: {
   } | null
 }): Promise<AssistantTaskResult> {
   const now = Date.now()
-  const taskKind = classifyTaskKind(args.request)
-  const interpretedGoal = interpretedGoalFor(taskKind, args.request)
+  const initialKind = classifyTaskKind(args.request)
+  const taskKind =
+    initialKind === "clarification" && args.previousTask ? args.previousTask.taskKind : initialKind
+  const effectiveRequest = args.previousTask
+    ? [
+        `Previous Assistant request: ${args.previousTask.requestText}`,
+        `Previous interpreted goal: ${args.previousTask.interpretedGoal}`,
+        `Previous result summary: ${args.previousTask.resultSummary}`,
+        `Follow-up request: ${args.request}`,
+      ].join("\n")
+    : args.request
+  const interpretedGoal = args.previousTask
+    ? `Continue the previous Assistant task and apply this follow-up: ${args.request}`
+    : interpretedGoalFor(taskKind, args.request)
   const progress: AssistantTaskStatus[] = ["queued", "interpreting", "searching", "reviewing"]
 
   if (taskKind === "open_loops" || taskKind === "codex_prompt_draft") {
@@ -819,9 +874,9 @@ export async function createAssistantTaskResult(args: {
     }
   }
 
-  const scored = selectRelevantThreads(args.request, args.threads)
+  const scored = selectRelevantThreads(effectiveRequest, args.threads)
   const sources = sourcesFromScored(scored)
-  const lower = args.request.toLowerCase()
+  const lower = effectiveRequest.toLowerCase()
   let artifactResult =
     lower.includes("lifting") || lower.includes("spreadsheet") || lower.includes("csv")
       ? buildLiftingArtifact(args.request, scored)
@@ -832,7 +887,7 @@ export async function createAssistantTaskResult(args: {
     !(lower.includes("lifting") || lower.includes("spreadsheet") || lower.includes("csv"))
   ) {
     const modelArtifact = await generateAssistantDocumentArtifact({
-      request: args.request,
+      request: effectiveRequest,
       interpretedGoal,
       title: inferDocumentTitle(args.request),
       sources: scored.slice(0, 8).map((item) => ({

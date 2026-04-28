@@ -29,6 +29,23 @@ const AssistantThreadSchema = z.object({
   messages: z.array(AssistantMessageSchema).default([]),
 })
 
+const AssistantTaskKindSchema = z.enum([
+  "cross_chat_artifact",
+  "open_loops",
+  "current_chat_help",
+  "codex_prompt_draft",
+  "clarification",
+])
+
+const AssistantSourceSchema = z.object({
+  chatId: z.string(),
+  title: z.string(),
+  updatedAt: z.number().optional(),
+  reason: z.string(),
+  snippet: z.string(),
+  confidence: z.number().optional(),
+})
+
 const AssistantRunSchema = z.object({
   request: z.string().min(1),
   clientTaskId: z.string().optional(),
@@ -38,9 +55,9 @@ const AssistantRunSchema = z.object({
     .object({
       requestText: z.string(),
       interpretedGoal: z.string(),
-      taskKind: z.string(),
+      taskKind: AssistantTaskKindSchema,
       resultSummary: z.string(),
-      sources: z.array(z.unknown()),
+      sources: z.array(AssistantSourceSchema),
     })
     .nullable()
     .optional(),
@@ -120,7 +137,7 @@ export async function POST(request: NextRequest) {
       id: taskId,
       request: requestText,
       threads,
-      previousTask: null,
+      previousTask: parsed.data.previousTask ?? null,
     })
 
     return NextResponse.json({ task })
@@ -132,6 +149,6 @@ export async function POST(request: NextRequest) {
       request: requestText || "Assistant request",
       error: message,
     })
-    return NextResponse.json({ task }, { status: 200 })
+    return NextResponse.json({ task, error: message }, { status: 500 })
   }
 }

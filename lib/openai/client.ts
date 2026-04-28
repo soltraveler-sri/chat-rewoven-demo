@@ -141,7 +141,7 @@ type TextVerbosity = "low" | "medium" | "high"
 const REASONING_EFFORT: Record<RequestKind, ReasoningEffort> = {
   chat_fast: "low",
   chat_deep: "low",
-  summarize: "minimal", // Use minimal for fastest summarization
+  summarize: "low",
   intent: "low",
   stacks: "low",
   finder: "low",
@@ -153,7 +153,7 @@ const REASONING_EFFORT: Record<RequestKind, ReasoningEffort> = {
  * Fallback reasoning effort if the primary is rejected by the API
  */
 const REASONING_EFFORT_FALLBACK: Partial<Record<RequestKind, ReasoningEffort>> = {
-  summarize: "low", // Fall back to "low" if "minimal" is rejected
+  summarize: "low", // Supports env overrides such as minimal with a safe fallback
   assistant: "low",
 }
 
@@ -430,7 +430,7 @@ export async function createTextResponse(options: {
  * Create a summarization response with timeout and reasoning effort fallback
  * 
  * This function is optimized for speed:
- * - Uses "minimal" reasoning effort (falls back to "low" if rejected)
+ * - Uses "low" reasoning effort by default
  * - Supports abort signal for timeout
  * - Always uses store: false (summarization shouldn't affect chaining state)
  * - Includes instrumentation logging for debugging
@@ -475,7 +475,7 @@ export async function createSummarizeResponse(options: {
   }
 
   try {
-    // Try with primary reasoning effort (minimal)
+    // Try with the configured reasoning effort.
     const response = await attemptRequest(reasoningUsed)
     const durationMs = Date.now() - startTime
 
@@ -510,6 +510,7 @@ export async function createSummarizeResponse(options: {
     // Check if the API rejected the configured reasoning effort - retry with fallback
     if (
       config.reasoningFallback &&
+      config.reasoningFallback !== reasoningUsed &&
       error instanceof OpenAI.APIError &&
       isReasoningUnsupportedError(error)
     ) {

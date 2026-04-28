@@ -14,6 +14,15 @@ const AssistantDocumentSectionSchema = z.object({
     .describe("Specific, non-repetitive bullets grounded in the provided chat context"),
 })
 
+const AssistantDocumentTableSchema = z.object({
+  title: z.string().describe("Short table title"),
+  headers: z.array(z.string()).min(2).max(5).describe("Concise table headers"),
+  rows: z
+    .array(z.array(z.string()).min(2).max(5))
+    .max(8)
+    .describe("Rows grounded only in provided source context"),
+})
+
 const AssistantDocumentSourceSchema = z.object({
   chatId: z.string().describe("Source chat ID exactly as provided"),
   title: z.string().describe("Source chat title exactly as provided"),
@@ -26,7 +35,15 @@ const AssistantDocumentSchema = z.object({
   overview: z
     .string()
     .describe("Brief synthesis of what the provided chats support. Do not invent facts."),
+  keyTakeaways: z
+    .array(z.string())
+    .max(5)
+    .describe("The most important user-facing takeaways from the provided chat context"),
   sections: z.array(AssistantDocumentSectionSchema).min(1).max(8),
+  tables: z
+    .array(AssistantDocumentTableSchema)
+    .max(3)
+    .describe("Optional compact tables for plans, inventories, references, or checklists"),
   sourcesUsed: z.array(AssistantDocumentSourceSchema).max(8),
   missingOrAmbiguous: z
     .array(z.string())
@@ -88,6 +105,26 @@ function renderMarkdownDocument(parsed: z.infer<typeof AssistantDocumentSchema>)
     "",
   ]
 
+  if (parsed.keyTakeaways.length > 0) {
+    lines.push("## Key Takeaways")
+    for (const takeaway of parsed.keyTakeaways) {
+      lines.push(`- ${takeaway}`)
+    }
+    lines.push("")
+  }
+
+  for (const table of parsed.tables) {
+    const columnCount = table.headers.length
+    lines.push(`## ${table.title}`)
+    lines.push(`| ${table.headers.join(" | ")} |`)
+    lines.push(`| ${table.headers.map(() => "---").join(" | ")} |`)
+    for (const row of table.rows) {
+      const cells = Array.from({ length: columnCount }, (_, index) => row[index] || "")
+      lines.push(`| ${cells.map((cell) => cell.replace(/\|/g, "\\|")).join(" | ")} |`)
+    }
+    lines.push("")
+  }
+
   for (const section of parsed.sections) {
     lines.push(`## ${section.heading}`)
     for (const bullet of section.bullets) {
@@ -145,6 +182,10 @@ ${context}
 Create the downloadable document artifact. Use only the chat context above.
 Requirements:
 - Synthesize across chats instead of repeating the same source snippet.
+- Produce a finished user-facing artifact, not a recap of the retrieval process.
+- Start with 3-5 key takeaways when the context supports them.
+- If the request asks for a plan, include a practical sequence, checkpoints, and what to do first.
+- Use compact tables for plans, reference overviews, inventories, or checklists when they make the artifact easier to use.
 - Preserve exact facts, dates, numbers, units, and claims only when present.
 - Leave gaps explicit in missingOrAmbiguous.
 - Do not include generic advice unless it is clearly grounded in the provided chats.
@@ -163,13 +204,19 @@ Requirements:
     if (!parsed) return null
 
     const content = renderMarkdownDocument(parsed)
+    const overview = parsed.overview.replace(/\s+/g, " ").trim()
+    const summaryParts = [
+      `Created "${parsed.title}" from ${args.sources.length} source chat${args.sources.length === 1 ? "" : "s"}.`,
+      overview ? overview.slice(0, 260) : "",
+    ].filter(Boolean)
+
     return {
       artifact: makeAssistantArtifact({
         kind: "markdown",
         filename: `${slugifyFilenamePart(parsed.title || args.title)}.md`,
         content,
       }),
-      summary: `I synthesized a downloadable ${parsed.title.toLowerCase()} from ${args.sources.length} source chat${args.sources.length === 1 ? "" : "s"}.`,
+      summary: summaryParts.join("\n\n"),
       missingInfo: parsed.missingOrAmbiguous,
     }
   } catch (error) {

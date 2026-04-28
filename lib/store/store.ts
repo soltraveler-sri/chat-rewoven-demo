@@ -328,6 +328,15 @@ class MemoryStore implements ChatStore {
     return thread
   }
 
+  async upsertThread(demoUid: string, thread: StoredChatThread): Promise<void> {
+    logOp("Memory", "upsertThread", demoUid, `threadId=${thread.id.slice(0, 8)}`)
+    const userThreads = this.getOrCreateUserThreads(demoUid)
+    userThreads.set(thread.id, {
+      ...thread,
+      messages: [...thread.messages],
+    })
+  }
+
   async appendMessage(
     demoUid: string,
     threadId: string,
@@ -456,6 +465,20 @@ class ResilientRedisStore implements ChatStore {
     return false
   }
 
+  private async mirrorRedisThreadToFallback(demoUid: string, threadId: string): Promise<void> {
+    try {
+      const thread = await this.redis.getThread(demoUid, threadId)
+      if (thread) {
+        await this.fallback.upsertThread(demoUid, thread)
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      console.warn(
+        `[ChatStore:Resilient] Failed to mirror Redis thread to fallback: ${message}`
+      )
+    }
+  }
+
   /**
    * Try a Redis operation; on failure, fall back to memory store.
    * For read operations, the memory store result is returned (may be empty on first fallback).
@@ -524,8 +547,7 @@ class ResilientRedisStore implements ChatStore {
       "appendMessage",
       async () => {
         await this.redis.appendMessage(demoUid, threadId, message)
-        // Mirror to fallback
-        await this.fallback.appendMessage(demoUid, threadId, message)
+        await this.mirrorRedisThreadToFallback(demoUid, threadId)
       },
       () => this.fallback.appendMessage(demoUid, threadId, message),
       true,
@@ -537,8 +559,7 @@ class ResilientRedisStore implements ChatStore {
       "updateThread",
       async () => {
         await this.redis.updateThread(demoUid, threadId, partial)
-        // Mirror to fallback
-        await this.fallback.updateThread(demoUid, threadId, partial)
+        await this.mirrorRedisThreadToFallback(demoUid, threadId)
       },
       () => this.fallback.updateThread(demoUid, threadId, partial),
       true,

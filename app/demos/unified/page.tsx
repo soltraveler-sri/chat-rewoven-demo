@@ -140,6 +140,61 @@ function buildTaskContextInput(task: CodexTask): string | null {
   return lines.join("\n")
 }
 
+function buildAssistantContextInput(task: AssistantTaskResult): string | null {
+  if (task.status !== "ready" && task.status !== "no_results") return null
+
+  const lines: string[] = [
+    "Assistant output added to this chat's hidden context.",
+    "",
+    `Original Assistant request: ${task.requestText}`,
+    `Interpreted goal: ${task.interpretedGoal}`,
+    "",
+    "## Result",
+    task.resultSummary,
+    "",
+  ]
+
+  if (task.artifact) {
+    const maxArtifactChars = 14000
+    const content =
+      task.artifact.content.length > maxArtifactChars
+        ? `${task.artifact.content.slice(0, maxArtifactChars).trim()}\n\n[Artifact truncated for chat context.]`
+        : task.artifact.content
+    lines.push(`## Artifact: ${task.artifact.filename}`)
+    lines.push(content)
+    lines.push("")
+  }
+
+  if (task.openLoops?.length) {
+    lines.push("## Open Loops")
+    for (const item of task.openLoops) {
+      lines.push(`- ${item.chatTitle}: ${item.reason} Next action: ${item.nextAction}`)
+    }
+    lines.push("")
+  }
+
+  if (task.sources.length > 0) {
+    lines.push("## Sources Used")
+    for (const source of task.sources.slice(0, 8)) {
+      lines.push(`- ${source.title} (${source.chatId}): ${source.reason}`)
+      if (source.snippet) {
+        lines.push(`  Snippet: ${source.snippet}`)
+      }
+    }
+    lines.push("")
+  }
+
+  if (task.missingInfo?.length) {
+    lines.push("## Missing or Ambiguous Information")
+    for (const item of task.missingInfo) {
+      lines.push(`- ${item}`)
+    }
+    lines.push("")
+  }
+
+  return lines.join("\n").trim()
+}
+
 // =============================================================================
 // Extended Chat Message Type (with task support)
 // =============================================================================
@@ -288,8 +343,7 @@ function createPendingAssistantTask(id: string, requestText: string): AssistantT
     updatedAt: now,
     status: "searching",
     requestText,
-    interpretedGoal:
-      "Ask the Assistant to work across your chats, recover unfinished threads, or turn scattered context into files.",
+    interpretedGoal: "Review workspace context and prepare a product-level Assistant result.",
     taskKind: "clarification",
     progress: ["queued", "interpreting", "searching"],
     sources: [],
@@ -367,6 +421,9 @@ function UnifiedDemoContent() {
   // ASSISTANT STATE
   // ==========================================================================
   const [assistantTasks, setAssistantTasks] = useState<Record<string, AssistantTaskResult>>({})
+  const [includedAssistantContextIds, setIncludedAssistantContextIds] = useState<Set<string>>(
+    () => new Set()
+  )
 
   // ==========================================================================
   // FIND STATE
@@ -2141,6 +2198,60 @@ function UnifiedDemoContent() {
     toast.success("Prompt inserted")
   }
 
+  const handleIncludeAssistantContext = async (task: AssistantTaskResult) => {
+    if (includedAssistantContextIds.has(task.id)) return
+
+    const contextInput = buildAssistantContextInput(task)
+    if (!contextInput) {
+      toast.error("Assistant output is not ready to include yet")
+      return
+    }
+
+    try {
+      logAuditClient("assistant", "assistant_context_ingest_start", {
+        taskId: task.id,
+        threadId: storedThreadIdRef.current,
+        previousResponseId: lastResponseIdRef.current,
+      })
+
+      const responseData = await enqueueChain(async () =>
+        respondWithRetry({
+          input: contextInput,
+          mode: "deep",
+          source: "ingestion",
+        })
+      )
+
+      lastResponseIdRef.current = responseData.id
+      setState((prev) => ({
+        ...prev,
+        lastResponseId: responseData.id,
+      }))
+
+      if (storedThreadIdRef.current) {
+        await updateStoredThread(storedThreadIdRef.current, {
+          lastResponseId: responseData.id,
+        })
+      }
+
+      setIncludedAssistantContextIds((prev) => {
+        const next = new Set(prev)
+        next.add(task.id)
+        return next
+      })
+
+      logAuditClient("assistant", "assistant_context_ingest_complete", {
+        taskId: task.id,
+        threadId: storedThreadIdRef.current,
+        newResponseId: responseData.id,
+      })
+      toast.success("Assistant output added to chat context")
+    } catch (error) {
+      console.error("Failed to include Assistant context:", error)
+      toast.error("Could not add Assistant output to chat context")
+    }
+  }
+
   const handleCloseAssistantTask = (taskId: string) => {
     setState((prev) => ({
       ...prev,
@@ -2152,6 +2263,12 @@ function UnifiedDemoContent() {
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { [taskId]: _removed, ...rest } = prev
       return rest
+    })
+    setIncludedAssistantContextIds((prev) => {
+      if (!prev.has(taskId)) return prev
+      const next = new Set(prev)
+      next.delete(taskId)
+      return next
     })
   }
 
@@ -2319,6 +2436,8 @@ function UnifiedDemoContent() {
                         onClose={() => handleCloseAssistantTask(task.id)}
                         onOpenChat={handleOpenAssistantChat}
                         onInsertPrompt={handleInsertAssistantPrompt}
+                        onIncludeInChatContext={handleIncludeAssistantContext}
+                        isIncludedInChatContext={includedAssistantContextIds.has(task.id)}
                       />
                     )
                   }

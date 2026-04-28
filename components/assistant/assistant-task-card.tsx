@@ -3,14 +3,18 @@
 import { FormEvent, useState } from "react"
 import {
   AlertCircle,
+  ChevronDown,
+  ChevronUp,
   Check,
   Clipboard,
   Compass,
   Download,
   ExternalLink,
+  Eye,
   FileText,
   Loader2,
   MessageSquare,
+  Plus,
   Search,
   Sparkles,
   X,
@@ -57,6 +61,18 @@ interface AssistantTaskCardProps {
   onClose?: () => void
   onOpenChat?: (chatId: string) => void
   onInsertPrompt?: (prompt: string) => void
+  onIncludeInChatContext?: (task: AssistantTaskResult) => void
+  isIncludedInChatContext?: boolean
+}
+
+const TERMINAL_STATUSES = new Set<AssistantTaskStatus>(["ready", "failed", "no_results"])
+
+const TASK_KIND_LABELS: Record<AssistantTaskResult["taskKind"], string> = {
+  cross_chat_artifact: "Artifact",
+  open_loops: "Open loops",
+  current_chat_help: "Current chat",
+  codex_prompt_draft: "Codex follow-up",
+  clarification: "Assistant",
 }
 
 function downloadArtifact(artifact: AssistantArtifact) {
@@ -95,16 +111,16 @@ function ProgressList({ task }: { task: AssistantTaskResult }) {
   ]
 
   const done = new Set(task.progress)
-  const isRunning = !["ready", "failed", "no_results"].includes(task.status)
+  const isRunning = !TERMINAL_STATUSES.has(task.status)
 
   return (
-    <div className="grid grid-cols-2 gap-2">
+    <div className="flex flex-wrap gap-2">
       {steps.map((step) => {
         const complete = done.has(step.status) || task.status === "ready" || task.status === "no_results"
         return (
           <div
             key={step.status}
-            className="flex items-center gap-2 rounded-md border border-border/60 bg-background/60 px-2.5 py-2 text-xs"
+            className="flex h-8 min-w-[150px] flex-1 items-center gap-2 rounded-md border border-border/60 bg-background/60 px-2.5 text-xs"
           >
             {complete ? (
               <Check className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
@@ -198,6 +214,40 @@ function ArtifactPanel({ artifact }: { artifact: AssistantArtifact }) {
           <Download className="h-3.5 w-3.5" />
           Download
         </Button>
+      </div>
+    </div>
+  )
+}
+
+function ArtifactPreview({
+  artifact,
+  compact = false,
+}: {
+  artifact: AssistantArtifact
+  compact?: boolean
+}) {
+  const maxChars = compact ? 5000 : 12000
+  const content =
+    artifact.content.length > maxChars
+      ? `${artifact.content.slice(0, maxChars).trim()}\n\n...`
+      : artifact.content
+  const isMarkdown = artifact.kind === "markdown"
+
+  return (
+    <div className="overflow-hidden rounded-lg border border-border/70 bg-background">
+      <div
+        className={cn(
+          "overflow-auto px-3 py-3 text-sm",
+          compact ? "max-h-56" : "max-h-80"
+        )}
+      >
+        {isMarkdown ? (
+          <MarkdownContent content={content} />
+        ) : (
+          <pre className="whitespace-pre-wrap break-words font-mono text-xs leading-relaxed text-muted-foreground">
+            {content}
+          </pre>
+        )}
       </div>
     </div>
   )
@@ -365,9 +415,23 @@ export function AssistantTaskCard({
   onClose,
   onOpenChat,
   onInsertPrompt,
+  onIncludeInChatContext,
+  isIncludedInChatContext = false,
 }: AssistantTaskCardProps) {
   const [followUp, setFollowUp] = useState("")
-  const isWorking = !["ready", "failed", "no_results"].includes(task.status)
+  const [artifactPreviewState, setArtifactPreviewState] = useState<{
+    filename?: string
+    open: boolean
+  }>(() => ({
+    filename: task.artifact?.filename,
+    open: Boolean(task.artifact) && !compact,
+  }))
+  const isWorking = !TERMINAL_STATUSES.has(task.status)
+  const artifactFilename = task.artifact?.filename
+  const showArtifactPreview =
+    artifactPreviewState.filename === artifactFilename
+      ? artifactPreviewState.open
+      : Boolean(artifactFilename) && !compact
 
   const handleFollowUp = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -377,11 +441,177 @@ export function AssistantTaskCard({
     onFollowUp(text, task.id)
   }
 
+  const canIncludeInContext =
+    Boolean(onIncludeInChatContext) && task.status === "ready" && Boolean(task.artifact || task.resultSummary)
+  const sourcesSummary = `${task.reviewedChatCount} chat${task.reviewedChatCount === 1 ? "" : "s"} reviewed${
+    task.sources.length ? ` • ${task.sources.length} source${task.sources.length === 1 ? "" : "s"} used` : ""
+  }`
+
+  const renderArtifactActions = () => {
+    if (!task.artifact && !canIncludeInContext) return null
+
+    return (
+      <div className="flex flex-wrap gap-2">
+        {task.artifact && (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-8 gap-1.5"
+            onClick={() =>
+              setArtifactPreviewState({
+                filename: artifactFilename,
+                open: !showArtifactPreview,
+              })
+            }
+          >
+            {showArtifactPreview ? (
+              <ChevronUp className="h-3.5 w-3.5" />
+            ) : (
+              <Eye className="h-3.5 w-3.5" />
+            )}
+            {showArtifactPreview ? "Hide preview" : "Preview output"}
+          </Button>
+        )}
+        {canIncludeInContext && onIncludeInChatContext && (
+          <Button
+            type="button"
+            variant={isIncludedInChatContext ? "secondary" : "outline"}
+            size="sm"
+            className="h-8 gap-1.5"
+            disabled={isIncludedInChatContext}
+            onClick={() => onIncludeInChatContext(task)}
+          >
+            <Plus className="h-3.5 w-3.5" />
+            {isIncludedInChatContext ? "Included in chat context" : "Include in chat context"}
+          </Button>
+        )}
+      </div>
+    )
+  }
+
+  const followUpForm = onFollowUp ? (
+    <form onSubmit={handleFollowUp} className="flex items-end gap-2 border-t border-border/70 pt-3">
+      <textarea
+        value={followUp}
+        onChange={(event) => setFollowUp(event.target.value)}
+        placeholder="Follow up with Assistant..."
+        rows={1}
+        className="min-h-9 flex-1 resize-none rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-1 focus-visible:ring-ring"
+      />
+      <Button type="submit" size="sm" disabled={!followUp.trim()}>
+        Send
+      </Button>
+    </form>
+  ) : null
+
+  if (compact) {
+    return (
+      <div className="overflow-hidden rounded-lg border border-teal-500/20 bg-card shadow-sm">
+        <div className="space-y-3 p-3">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex min-w-0 items-start gap-2.5">
+              <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-teal-500/10">
+                <Compass className="h-4 w-4 text-teal-700 dark:text-teal-300" />
+              </div>
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <p className="font-medium">Assistant</p>
+                  <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                    {TASK_KIND_LABELS[task.taskKind]}
+                  </span>
+                  <span
+                    className={cn(
+                      "rounded-full px-2 py-0.5 text-[10px] font-medium",
+                      STATUS_STYLES[task.status]
+                    )}
+                  >
+                    {STATUS_LABELS[task.status]}
+                  </span>
+                </div>
+                <p className="mt-1 break-words text-sm leading-relaxed text-muted-foreground">
+                  {task.requestText}
+                </p>
+              </div>
+            </div>
+            {onClose && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 shrink-0"
+                onClick={onClose}
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            )}
+          </div>
+
+          {isWorking ? (
+            <div className="flex items-center gap-2 rounded-lg bg-muted/50 px-3 py-2 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Reviewing chats and preparing the result...
+            </div>
+          ) : (
+            <>
+              {task.status === "failed" && (
+                <div className="flex items-start gap-2 rounded-lg border border-red-500/20 bg-red-500/5 px-3 py-2 text-sm text-red-700 dark:text-red-300">
+                  <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                  <span>{task.error || task.resultSummary}</span>
+                </div>
+              )}
+
+              <div className="rounded-lg bg-muted/30 px-3 py-2 text-sm leading-relaxed">
+                <MarkdownContent content={task.resultSummary} />
+              </div>
+
+              {task.artifact && <ArtifactPanel artifact={task.artifact} />}
+              {renderArtifactActions()}
+              {task.artifact && showArtifactPreview && (
+                <ArtifactPreview artifact={task.artifact} compact />
+              )}
+
+              {task.openLoops && task.openLoops.length > 0 && (
+                <div className="space-y-2">
+                  {task.openLoops.slice(0, 3).map((item) => (
+                    <OpenLoopItem
+                      key={item.id}
+                      item={item}
+                      onOpenChat={onOpenChat}
+                      onInsertPrompt={onInsertPrompt}
+                    />
+                  ))}
+                </div>
+              )}
+
+              <div className="flex items-center justify-between gap-2 rounded-md bg-background/70 px-3 py-2 text-xs text-muted-foreground">
+                <span>{sourcesSummary}</span>
+                {task.sources.length > 0 && (
+                  <details className="group">
+                    <summary className="flex cursor-pointer list-none items-center gap-1 font-medium text-foreground">
+                      Sources
+                      <ChevronDown className="h-3 w-3 group-open:hidden" />
+                      <ChevronUp className="hidden h-3 w-3 group-open:block" />
+                    </summary>
+                    <div className="mt-2 min-w-[320px]">
+                      <SourceList sources={task.sources} onOpenChat={onOpenChat} />
+                    </div>
+                  </details>
+                )}
+              </div>
+
+              {followUpForm}
+            </>
+          )}
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div
       className={cn(
-        "overflow-hidden rounded-xl border border-teal-500/20 bg-card shadow-sm dark:shadow-md dark:shadow-black/20",
-        compact ? "max-h-[560px]" : "w-full"
+        "mx-auto w-full max-w-5xl overflow-hidden rounded-xl border border-teal-500/20 bg-card shadow-sm dark:shadow-md dark:shadow-black/20"
       )}
     >
       <div className="border-b border-border/70 bg-teal-500/5 px-4 py-3">
@@ -393,6 +623,9 @@ export function AssistantTaskCard({
             <div className="min-w-0">
               <div className="flex items-center gap-2">
                 <p className="font-medium">Assistant</p>
+                <span className="rounded-full bg-background/70 px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                  {TASK_KIND_LABELS[task.taskKind]}
+                </span>
                 <span
                   className={cn(
                     "rounded-full px-2 py-0.5 text-[10px] font-medium",
@@ -421,113 +654,109 @@ export function AssistantTaskCard({
         </div>
       </div>
 
-      <div className={cn("space-y-4 p-4", compact && "max-h-[500px] overflow-auto")}>
-        <div>
-          <p className="mb-1 text-[10px] font-medium uppercase text-muted-foreground">
-            Interpreted Goal
-          </p>
-          <p className="text-sm leading-relaxed">{task.interpretedGoal}</p>
-        </div>
-
-        <ProgressList task={task} />
-
+      <div className="space-y-4 p-4">
         {isWorking && (
-          <div className="flex items-center gap-2 rounded-lg bg-muted/50 px-3 py-2 text-sm text-muted-foreground">
-            <Loader2 className="h-4 w-4 animate-spin" />
-            Working across available chat context...
-          </div>
-        )}
-
-        {task.status === "failed" && (
-          <div className="flex items-start gap-2 rounded-lg border border-red-500/20 bg-red-500/5 px-3 py-2 text-sm text-red-700 dark:text-red-300">
-            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-            <span>{task.error || task.resultSummary}</span>
-          </div>
-        )}
-
-        <div>
-          <p className="mb-1 text-[10px] font-medium uppercase text-muted-foreground">
-            Result
-          </p>
-          <div className="text-sm leading-relaxed">
-            <MarkdownContent content={task.resultSummary} />
-          </div>
-        </div>
-
-        {task.artifact && <ArtifactPanel artifact={task.artifact} />}
-
-        {task.openLoops && task.openLoops.length > 0 && (
-          <div>
-            <p className="mb-2 text-[10px] font-medium uppercase text-muted-foreground">
-              Open Loops Brief
-            </p>
-            <div className="space-y-2">
-              {task.openLoops.map((item) => (
-                <OpenLoopItem
-                  key={item.id}
-                  item={item}
-                  onOpenChat={onOpenChat}
-                  onInsertPrompt={onInsertPrompt}
-                />
-              ))}
+          <>
+            <ProgressList task={task} />
+            <div className="flex items-center gap-2 rounded-lg bg-muted/50 px-3 py-2 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Reviewing available chat context...
             </div>
-          </div>
+          </>
         )}
 
-        <div>
-          <div className="mb-2 flex items-center gap-2">
-            <Search className="h-3.5 w-3.5 text-muted-foreground" />
-            <p className="text-[10px] font-medium uppercase text-muted-foreground">
-              Sources Used
-            </p>
-            <span className="text-[10px] text-muted-foreground">
-              {task.reviewedChatCount} reviewed
-            </span>
-          </div>
-          <SourceList sources={task.sources} onOpenChat={onOpenChat} />
-        </div>
+        {!isWorking && (
+          <>
+            <div className="rounded-lg bg-muted/30 px-3 py-2">
+              <p className="mb-1 text-[10px] font-medium uppercase text-muted-foreground">
+                Interpreted Goal
+              </p>
+              <p className="text-sm leading-relaxed">{task.interpretedGoal}</p>
+            </div>
 
-        {task.missingInfo && task.missingInfo.length > 0 && (
-          <div className="rounded-lg border border-border/70 bg-muted/30 px-3 py-2">
-            <p className="mb-1 text-[10px] font-medium uppercase text-muted-foreground">
-              Missing or Ambiguous
-            </p>
-            <ul className="space-y-1 text-xs text-muted-foreground">
-              {task.missingInfo.map((item) => (
-                <li key={item}>- {item}</li>
-              ))}
-            </ul>
-          </div>
-        )}
+            {task.status === "failed" && (
+              <div className="flex items-start gap-2 rounded-lg border border-red-500/20 bg-red-500/5 px-3 py-2 text-sm text-red-700 dark:text-red-300">
+                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                <span>{task.error || task.resultSummary}</span>
+              </div>
+            )}
 
-        <ProposedActions
-          actions={task.proposedActions}
-          artifact={task.artifact}
-          onOpenChat={onOpenChat}
-          onInsertPrompt={onInsertPrompt}
-        />
+            <div>
+              <p className="mb-1 text-[10px] font-medium uppercase text-muted-foreground">
+                Result
+              </p>
+              <div className="text-sm leading-relaxed">
+                <MarkdownContent content={task.resultSummary} />
+              </div>
+            </div>
 
-        {onFollowUp && (
-          <form onSubmit={handleFollowUp} className="flex items-end gap-2 border-t border-border/70 pt-3">
-            <textarea
-              value={followUp}
-              onChange={(event) => setFollowUp(event.target.value)}
-              placeholder="Follow up with Assistant..."
-              rows={1}
-              className="min-h-9 flex-1 resize-none rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            {task.artifact && <ArtifactPanel artifact={task.artifact} />}
+            {renderArtifactActions()}
+            {task.artifact && showArtifactPreview && (
+              <ArtifactPreview artifact={task.artifact} />
+            )}
+
+            {task.openLoops && task.openLoops.length > 0 && (
+              <div>
+                <p className="mb-2 text-[10px] font-medium uppercase text-muted-foreground">
+                  Open Loops Brief
+                </p>
+                <div className="space-y-2">
+                  {task.openLoops.map((item) => (
+                    <OpenLoopItem
+                      key={item.id}
+                      item={item}
+                      onOpenChat={onOpenChat}
+                      onInsertPrompt={onInsertPrompt}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div>
+              <div className="mb-2 flex items-center gap-2">
+                <Search className="h-3.5 w-3.5 text-muted-foreground" />
+                <p className="text-[10px] font-medium uppercase text-muted-foreground">
+                  Sources Used
+                </p>
+                <span className="text-[10px] text-muted-foreground">
+                  {task.reviewedChatCount} reviewed
+                </span>
+              </div>
+              <SourceList sources={task.sources} onOpenChat={onOpenChat} />
+            </div>
+
+            {task.missingInfo && task.missingInfo.length > 0 && (
+              <div className="rounded-lg border border-border/70 bg-muted/30 px-3 py-2">
+                <p className="mb-1 text-[10px] font-medium uppercase text-muted-foreground">
+                  Missing or Ambiguous
+                </p>
+                <ul className="space-y-1 text-xs text-muted-foreground">
+                  {task.missingInfo.map((item) => (
+                    <li key={item}>- {item}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            <ProposedActions
+              actions={task.proposedActions}
+              artifact={task.artifact}
+              onOpenChat={onOpenChat}
+              onInsertPrompt={onInsertPrompt}
             />
-            <Button type="submit" size="sm" disabled={!followUp.trim()}>
-              Send
-            </Button>
-          </form>
-        )}
 
-        {onClose && !compact && (
-          <div className="flex justify-end border-t border-border/70 pt-3">
-            <Button type="button" variant="ghost" size="sm" onClick={onClose}>
-              Resume chat
-            </Button>
-          </div>
+            {followUpForm}
+
+            {onClose && (
+              <div className="flex justify-end border-t border-border/70 pt-3">
+                <Button type="button" variant="ghost" size="sm" onClick={onClose}>
+                  Resume chat
+                </Button>
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>

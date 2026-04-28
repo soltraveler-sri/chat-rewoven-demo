@@ -8,11 +8,18 @@ import { AssistantTaskCard } from "@/components/assistant/assistant-task-card"
 import type { AssistantTaskResult } from "@/lib/assistant/types"
 
 const SUGGESTIONS = [
-  "Find unfinished chats from this week",
-  "Extract lifting numbers into a spreadsheet",
-  "Turn calculus chats into a curriculum",
-  "Find chats that need a Codex follow-up",
-  "Summarize where I left off",
+  {
+    label: "Build a plan",
+    prompt: "Synthesize relevant chats into a clear plan I can follow",
+  },
+  {
+    label: "Recover loose ends",
+    prompt: "Find unfinished chats from this week and brief me on next actions",
+  },
+  {
+    label: "Create a spreadsheet",
+    prompt: "Extract lifting numbers into a spreadsheet",
+  },
 ]
 
 function createPendingTask(id: string, request: string): AssistantTaskResult {
@@ -23,8 +30,7 @@ function createPendingTask(id: string, request: string): AssistantTaskResult {
     updatedAt: now,
     status: "searching",
     requestText: request,
-    interpretedGoal:
-      "Ask the Assistant to work across your chats, recover unfinished threads, or turn scattered context into files.",
+    interpretedGoal: "Review workspace context and prepare a product-level Assistant result.",
     taskKind: "clarification",
     progress: ["queued", "interpreting", "searching"],
     sources: [],
@@ -89,7 +95,7 @@ export function AssistantPopup({
   }
 
   return (
-    <div className="absolute right-0 top-full z-40 mt-2 w-[440px] overflow-hidden rounded-xl border border-border bg-card shadow-xl dark:shadow-black/30">
+    <div className="absolute right-0 top-full z-40 mt-2 w-[420px] overflow-hidden rounded-xl border border-border bg-card shadow-xl dark:shadow-black/30">
       <div className="border-b border-border bg-teal-500/5 px-4 py-3">
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-start gap-3">
@@ -99,7 +105,7 @@ export function AssistantPopup({
             <div>
               <h2 className="text-sm font-semibold">Assistant</h2>
               <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                Ask the Assistant to work across your chats, recover unfinished threads, or turn scattered context into files.
+                Work across chats, recover loose ends, and turn context into files.
               </p>
             </div>
           </div>
@@ -110,14 +116,14 @@ export function AssistantPopup({
       </div>
 
       <div className="space-y-3 p-3">
-        <form onSubmit={handleSubmit} className="flex items-end gap-2">
+        <form onSubmit={handleSubmit} className="flex items-center gap-2">
           <textarea
             value={input}
             onChange={(event) => setInput(event.target.value)}
-            placeholder="Ask Assistant..."
-            rows={2}
+            placeholder="Ask across your chats..."
+            rows={1}
             disabled={isRunning}
-            className="min-h-[56px] flex-1 resize-none rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-60"
+            className="min-h-10 flex-1 resize-none rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-60"
           />
           <Button type="submit" size="icon" className="h-10 w-10 shrink-0" disabled={!input.trim() || isRunning}>
             {isRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
@@ -127,31 +133,34 @@ export function AssistantPopup({
         <div className="flex flex-wrap gap-2">
           {SUGGESTIONS.map((suggestion) => (
             <Button
-              key={suggestion}
+              key={suggestion.label}
               type="button"
               variant="outline"
               size="sm"
               className="h-7 rounded-full px-2.5 text-[11px]"
               disabled={isRunning}
-              onClick={() => runTask(suggestion)}
+              onClick={() => runTask(suggestion.prompt)}
             >
-              {suggestion}
+              {suggestion.label}
             </Button>
           ))}
         </div>
 
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          className="h-8 gap-1.5 text-xs"
-          onClick={onLoadSampleWorkspace}
-        >
-          <Database className="h-3.5 w-3.5" />
-          Load sample Assistant workspace
-        </Button>
+        <div className="flex items-center justify-between gap-3 rounded-lg bg-muted/30 px-3 py-2">
+          <p className="text-xs text-muted-foreground">Need demo data?</p>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-7 gap-1.5 px-2 text-xs"
+            onClick={onLoadSampleWorkspace}
+          >
+            <Database className="h-3.5 w-3.5" />
+            Load samples
+          </Button>
+        </div>
 
-        <div className="max-h-[560px] overflow-auto">
+        <div className="max-h-[500px] overflow-auto">
           {task ? (
             <AssistantTaskCard
               task={task}
