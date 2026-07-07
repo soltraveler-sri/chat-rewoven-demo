@@ -1,3 +1,4 @@
+import { enforceRateLimit } from "@/lib/rate-limit"
 import { NextRequest, NextResponse } from "next/server"
 import OpenAI from "openai"
 import {
@@ -29,6 +30,9 @@ interface RespondRequest {
 }
 
 export async function POST(request: NextRequest) {
+  const limited = await enforceRateLimit(request, "model")
+  if (limited) return limited
+
   let kind: RequestKind = "chat_deep"
 
   try {

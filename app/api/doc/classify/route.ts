@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { z } from "zod"
 import { createParsedResponse } from "@/lib/openai"
+import { enforceRateLimit } from "@/lib/rate-limit"
 
 export const runtime = "nodejs"
 
@@ -31,6 +32,9 @@ interface ClassifyRequest {
 }
 
 export async function POST(request: NextRequest) {
+  const limited = await enforceRateLimit(request, "model")
+  if (limited) return limited
+
   try {
     const body = (await request.json()) as ClassifyRequest
 

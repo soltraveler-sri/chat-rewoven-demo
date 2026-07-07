@@ -3,6 +3,7 @@ import { z } from "zod"
 import { getChatStore } from "@/lib/store"
 import type { StoredChatThreadMeta } from "@/lib/store"
 import { createParsedResponse, formatOpenAIError, getConfigInfo } from "@/lib/openai"
+import { enforceRateLimit } from "@/lib/rate-limit"
 
 // ---------------------------------------------------------------------------
 // POST /api/chats/find
@@ -222,6 +223,9 @@ function getDemoUid(request: NextRequest): string | null {
 // ---------------------------------------------------------------------------
 
 export async function POST(request: NextRequest) {
+  const limited = await enforceRateLimit(request, "model")
+  if (limited) return limited
+
   try {
     // Auth check
     const demoUid = getDemoUid(request)

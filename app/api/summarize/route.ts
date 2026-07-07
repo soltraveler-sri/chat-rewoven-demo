@@ -1,3 +1,4 @@
+import { enforceRateLimit } from "@/lib/rate-limit"
 import { NextRequest, NextResponse } from "next/server"
 import {
   createSummarizeResponse,
@@ -19,6 +20,9 @@ interface SummarizeRequest {
 }
 
 export async function POST(request: NextRequest) {
+  const limited = await enforceRateLimit(request, "model")
+  if (limited) return limited
+
   const startTime = Date.now()
 
   try {

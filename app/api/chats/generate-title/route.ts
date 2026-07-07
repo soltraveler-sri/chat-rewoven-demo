@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createSummarizeResponse, extractTextOutput, getConfigInfo } from "@/lib/openai"
+import { enforceRateLimit } from "@/lib/rate-limit"
 
 export const runtime = "nodejs"
 
@@ -40,6 +41,9 @@ function cleanGeneratedTitle(title: string, fallback: string): string {
 }
 
 export async function POST(request: NextRequest) {
+  const limited = await enforceRateLimit(request, "model")
+  if (limited) return limited
+
   let fallbackTitle = "New Chat"
 
   try {

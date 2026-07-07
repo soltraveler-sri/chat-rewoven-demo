@@ -3,6 +3,7 @@ import { z } from "zod"
 import { getChatStore } from "@/lib/store"
 import type { StoredChatCategory, StoredChatThread } from "@/lib/store"
 import { createParsedResponse, formatOpenAIError, getConfigInfo } from "@/lib/openai"
+import { enforceRateLimit } from "@/lib/rate-limit"
 
 /**
  * Helper to get demo_uid from cookies
@@ -117,6 +118,9 @@ Return a JSON object with a "chats" array containing an entry for each chat with
  * This categorizes recent chats using an LLM with structured outputs.
  */
 export async function POST(request: NextRequest) {
+  const limited = await enforceRateLimit(request, "model")
+  if (limited) return limited
+
   const demoUid = getDemoUid(request)
 
   if (!demoUid) {

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { z } from "zod"
 import { createParsedResponse, formatOpenAIError } from "@/lib/openai"
+import { enforceRateLimit } from "@/lib/rate-limit"
 
 // ---------------------------------------------------------------------------
 // POST /api/chats/intent
@@ -79,6 +80,9 @@ Analyze the message and return your classification.`
 }
 
 export async function POST(request: NextRequest) {
+  const limited = await enforceRateLimit(request, "model")
+  if (limited) return limited
+
   try {
     const body = await request.json()
 

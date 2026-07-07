@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
+import { enforceRateLimit } from "@/lib/rate-limit"
 import {
   chunkText,
   generateChunkAudio,
@@ -27,6 +28,9 @@ interface TTSRequest {
  * enabling progressive playback on the client via MediaSource.
  */
 export async function POST(request: NextRequest) {
+  const limited = await enforceRateLimit(request, "tts")
+  if (limited) return limited
+
   try {
     const body = (await request.json()) as TTSRequest
 

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { getChatStore } from "@/lib/store"
+import { enforceRateLimit } from "@/lib/rate-limit"
 import {
   createSummarizeResponse,
   extractTextOutput,
@@ -61,6 +62,9 @@ export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const limited = await enforceRateLimit(request, "model")
+  if (limited) return limited
+
   const demoUid = getDemoUid(request)
 
   if (!demoUid) {

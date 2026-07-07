@@ -7,6 +7,7 @@ import {
 } from "@/lib/assistant/retrieval"
 import type { AssistantChatThreadInput } from "@/lib/assistant/types"
 import { getChatStore } from "@/lib/store"
+import { enforceRateLimit } from "@/lib/rate-limit"
 
 export const runtime = "nodejs"
 
@@ -108,6 +109,9 @@ async function loadStoredThreads(demoUid: string | null): Promise<AssistantChatT
 }
 
 export async function POST(request: NextRequest) {
+  const limited = await enforceRateLimit(request, "model")
+  if (limited) return limited
+
   let requestText = ""
   const fallbackId = crypto.randomUUID()
 
