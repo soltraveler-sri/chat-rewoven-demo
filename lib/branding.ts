@@ -13,4 +13,4 @@ export const APP_NAME = "Chat, rewoven"
 export const APP_BADGE = "demo"
 
 export const APP_TAGLINE =
-  "A working concept for the next iteration of the ChatGPT interface — branching, history, code tasks, documents, and an assistant, woven into one chat."
+  "A working concept for the next iteration of the ChatGPT interface — branching, finding old chats, codex tasks, document TTS, and an assistant, woven into one chat."

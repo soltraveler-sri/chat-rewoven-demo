@@ -24,7 +24,7 @@ export const coldStartOnboardingFlow: UxFlow = {
     {
       name: "rail-panel-contract",
       run: async ({ page }) => {
-        await page.getByText(/Threads · \d\/5/).click()
+        await page.getByText(/Walkthrough · \d\/5/).click()
         await assertVisible(page.getByText("Branch & merge"), "rail row: branch")
         await assertVisible(page.getByText("Find a past chat"), "rail row: find")
         await assertVisible(page.getByText("Run a Codex task"), "rail row: codex")

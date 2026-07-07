@@ -13,7 +13,8 @@ import { toast } from "sonner"
 import { AssistantLauncher, AssistantTaskCard } from "@/components/assistant"
 import {
   BranchNudge,
-  BranchOverlay,
+  BranchSurface,
+  requestBranchClose,
   ChatMessageBubble,
   FileAttachmentChip,
   LooseThreadsRail,
@@ -54,6 +55,7 @@ import {
   type UnifiedMessage,
 } from "@/lib/chat/unified"
 import type { BranchThread, MainThreadState } from "@/lib/types"
+import { cn } from "@/lib/utils"
 
 const BRANCH_STARTER_PROMPT = "Plan a 3-day Kyoto trip focused on food"
 const CODEX_STARTER_PROMPT = "@codex add a dark-mode toggle to the settings page"
@@ -714,19 +716,51 @@ function UnifiedDemoContent() {
     stagePromptSubmit,
   ])
 
+  const branchIsOpen = !!activeBranchId && !!branches.activeBranch
+
   return (
     <TooltipProvider delayDuration={300}>
       <div className="flex h-full">
-        <UnifiedSidebar
-          threads={threads}
-          isLoadingThreads={isLoadingThreads}
-          activeThreadId={storedThreadIdRef.current}
-          urlChatId={urlChatId}
-          onReset={handleReset}
-          onSelectThread={handleSelectThread}
-        />
+        {/* Sidebar leaves entirely while a branch is open (two clean surfaces) */}
+        <div
+          className={cn(
+            "flex shrink-0 overflow-hidden transition-[width,opacity] duration-300",
+            branchIsOpen ? "w-0 opacity-0" : "w-64 opacity-100"
+          )}
+          aria-hidden={branchIsOpen}
+        >
+          <UnifiedSidebar
+            threads={threads}
+            isLoadingThreads={isLoadingThreads}
+            activeThreadId={storedThreadIdRef.current}
+            urlChatId={urlChatId}
+            onReset={handleReset}
+            onSelectThread={handleSelectThread}
+          />
+        </div>
 
-        <div className="flex-1 flex flex-col">
+        {/* Main chat: dims to the background while the branch surface is open;
+            clicking it returns to the main thread (same close semantics as ✕) */}
+        <div className="relative flex min-w-0 flex-1 flex-col">
+          {branchIsOpen && (
+            <button
+              type="button"
+              aria-label="Return to the main chat"
+              className="absolute inset-0 z-20 cursor-pointer bg-transparent"
+              onClick={() => {
+                if (branches.activeBranch && !isMerging) {
+                  requestBranchClose(branches.activeBranch, branches.handleCloseBranch)
+                }
+              }}
+            />
+          )}
+          <div
+            className={cn(
+              "flex min-w-0 flex-1 flex-col transition-opacity duration-300",
+              branchIsOpen && "pointer-events-none opacity-40 select-none"
+            )}
+            aria-hidden={branchIsOpen}
+          >
           <StorageWarningBanner className="m-2" />
 
           <div className="flex items-center justify-between px-4 py-3 border-b border-border/40">
@@ -921,13 +955,17 @@ function UnifiedDemoContent() {
           </div>
         </div>
 
-        <BranchOverlay
-          branch={branches.activeBranch}
-          parentMessageText={branches.parentMessageText}
-          isOpen={!!activeBranchId}
-          onClose={branches.handleCloseBranch}
-          onUpdateBranch={branches.handleUpdateBranch}
-        />
+        </div>
+
+        {/* The branch as its own writing surface, right of the seam */}
+        {branchIsOpen && branches.activeBranch && (
+          <BranchSurface
+            branch={branches.activeBranch}
+            parentMessageText={branches.parentMessageText}
+            onClose={branches.handleCloseBranch}
+            onUpdateBranch={branches.handleUpdateBranch}
+          />
+        )}
 
         {isMerging && <MergingOverlay />}
       </div>

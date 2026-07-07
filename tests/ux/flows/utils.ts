@@ -71,5 +71,5 @@ export async function assertCurrentEmptyState(page: Page) {
   await assertVisible(page.getByText("@assistant what did I leave unfinished this week?"), "Assistant card")
   await assertVisible(page.getByText("/find the chat about the telescope"), "Find card")
   await assertVisible(page.getByText("use our sample document"), "sample-document inline action")
-  await assertVisible(page.getByText(/Threads · \d\/5/), "loose-threads rail pill")
+  await assertVisible(page.getByText(/Walkthrough · \d\/5/), "loose-threads rail pill")
 }

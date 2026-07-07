@@ -9,7 +9,8 @@ import {
   ChatMessageBubble,
   TypingIndicator,
   Composer,
-  BranchOverlay,
+  BranchSurface,
+  requestBranchClose,
 } from "@/components/chat"
 import type { BranchCloseResult } from "@/components/chat"
 import type {
@@ -19,6 +20,7 @@ import type {
   BranchThread,
   SummarizeResponse,
 } from "@/lib/types"
+import { cn } from "@/lib/utils"
 import { SessionChatCache } from "@/lib/session-cache"
 
 function generateId(): string {
@@ -567,10 +569,32 @@ export default function BranchesDemo() {
   }
 
   const hasMessages = state.messages.length > 0
+  const branchIsOpen = !!activeBranchId && !!activeBranch
 
   return (
     <TooltipProvider delayDuration={300}>
-      <div className="flex flex-col h-full">
+      <div className="flex h-full">
+        {/* Main chat: dims behind the branch surface; click it to return */}
+        <div className="relative flex min-w-0 flex-1 flex-col">
+          {branchIsOpen && (
+            <button
+              type="button"
+              aria-label="Return to the main chat"
+              className="absolute inset-0 z-20 cursor-pointer bg-transparent"
+              onClick={() => {
+                if (activeBranch && !isMerging) {
+                  requestBranchClose(activeBranch, handleCloseBranch)
+                }
+              }}
+            />
+          )}
+          <div
+            className={cn(
+              "flex min-w-0 flex-1 flex-col transition-opacity duration-300",
+              branchIsOpen && "pointer-events-none opacity-40 select-none"
+            )}
+            aria-hidden={branchIsOpen}
+          >
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-border">
           <div className="flex items-center gap-2">
@@ -633,15 +657,18 @@ export default function BranchesDemo() {
           disabled={isLoading || isMerging}
           placeholder="Type a message... (Enter to send, Shift+Enter for newline)"
         />
+          </div>
+        </div>
 
-        {/* Branch Overlay */}
-        <BranchOverlay
-          branch={activeBranch}
-          parentMessageText={parentMessageText}
-          isOpen={!!activeBranchId}
-          onClose={handleCloseBranch}
-          onUpdateBranch={handleUpdateBranch}
-        />
+        {/* The branch as its own writing surface, right of the seam */}
+        {branchIsOpen && activeBranch && (
+          <BranchSurface
+            branch={activeBranch}
+            parentMessageText={parentMessageText}
+            onClose={handleCloseBranch}
+            onUpdateBranch={handleUpdateBranch}
+          />
+        )}
 
         {/* Merging overlay - animated and polished */}
         {isMerging && (

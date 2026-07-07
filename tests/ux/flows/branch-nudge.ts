@@ -26,7 +26,7 @@ export const branchNudgeFlow: UxFlow = {
         await reply.hover()
         const branchButton = page.locator("button:has(svg.lucide-git-branch)").last()
         await branchButton.click()
-        await assertVisible(page.getByText("Include in main context"), "branch overlay open")
+        await assertVisible(page.getByPlaceholder("Continue this side thread…"), "branch surface open")
       },
     },
     {
@@ -44,8 +44,8 @@ export const branchNudgeFlow: UxFlow = {
     {
       name: "merge-branch-back",
       run: async ({ page }) => {
-        await page.getByText("Include in main context").click()
-        // close the panel via its close button (X)
+        await page.getByText("Kept separate").click()
+        await assertVisible(page.getByText("Including main context"), "include pill toggled on")
         await page.keyboard.press("Escape")
         await assertVisible(page.getByText(/context added|context merged/).first(), "merged context chip in main thread")
       },
@@ -58,7 +58,7 @@ export const branchNudgeFlow: UxFlow = {
           null,
           { timeout: 10_000 }
         )
-        await assertVisible(page.getByText(/Threads · [1-5]\/5|Woven · 5\/5/), "rail pill advanced")
+        await assertVisible(page.getByText(/Walkthrough · [1-5]\/5|Woven · 5\/5/), "rail pill advanced")
       },
     },
   ],
