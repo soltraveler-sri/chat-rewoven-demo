@@ -1,5 +1,9 @@
+import { z } from "zod"
 import { makeAssistantArtifact, rowsToCsv, slugifyFilenamePart } from "@/lib/assistant/artifacts"
-import { generateAssistantDocumentArtifact } from "@/lib/assistant/generation"
+import {
+  generateAssistantCsvArtifact,
+  generateAssistantDocumentArtifact,
+} from "@/lib/assistant/generation"
 import type {
   AssistantArtifact,
   AssistantChatThreadInput,
@@ -10,10 +14,17 @@ import type {
   AssistantTaskResult,
   AssistantTaskStatus,
 } from "@/lib/assistant/types"
+import { createParsedResponse } from "@/lib/openai"
 
 const MAX_THREAD_TEXT = 12000
 const MAX_SNIPPET = 260
+const MAX_DIGEST_CHARS = 15000
+const DIGEST_SNIPPET_CHARS = 200
 const OPEN_LOOP_LIMIT = 6
+const FALLBACK_NOTE =
+  "Model-assisted planning was unavailable; this run used a deterministic organizer."
+
+type AssistantArtifactFormat = "document" | "csv" | null
 
 interface ScoredThread {
   thread: AssistantChatThreadInput
@@ -23,19 +34,57 @@ interface ScoredThread {
   snippet: string
 }
 
-interface LiftingCsvRow {
-  sourceChatTitle: string
-  sourceChatId: string
-  dateOrTimeframe: string
-  category: string
-  item: string
-  value: string
-  unit: string
-  repsSets: string
-  notes: string
-  confidence: string
-  sourceSnippet: string
+interface AssistantPlan {
+  taskKind: AssistantTaskKind
+  interpretedGoal: string
+  artifactFormat: AssistantArtifactFormat
+  selectedChats: Array<{
+    chatId: string
+    reason: string
+    confidence: number
+  }>
+  openLoops: Array<{
+    chatId: string
+    reason: string
+    nextAction: string
+    needsCodexPrompt: boolean
+    confidence: number
+  }>
 }
+
+const AssistantSelectedChatSchema = z.object({
+  chatId: z.string().describe("Relevant chat ID exactly as provided"),
+  reason: z.string().describe("Why this chat is relevant to the user request"),
+  confidence: z.number().min(0).max(1),
+})
+
+const AssistantOpenLoopSchema = z.object({
+  chatId: z.string().describe("Open-loop chat ID exactly as provided"),
+  reason: z.string().describe("What remains unfinished or unresolved"),
+  nextAction: z.string().describe("The next concrete action the user should take"),
+  needsCodexPrompt: z.boolean(),
+  confidence: z.number().min(0).max(1),
+})
+
+const AssistantPlanningSchema = z.object({
+  taskKind: z.enum([
+    "cross_chat_artifact",
+    "open_loops",
+    "current_chat_help",
+    "codex_prompt_draft",
+    "clarification",
+  ]),
+  interpretedGoal: z.string().min(1).describe("Concise interpretation of the user's goal"),
+  artifactFormat: z.enum(["document", "csv"]).nullable(),
+  selectedChats: z
+    .array(AssistantSelectedChatSchema)
+    .max(8)
+    .describe("Only genuinely relevant chats, never filler"),
+  openLoops: z
+    .array(AssistantOpenLoopSchema)
+    .max(6)
+    .describe("Only for open-loop or prompt-drafting requests"),
+})
 
 const STOPWORDS = new Set([
   "the",
@@ -67,109 +116,6 @@ const STOPWORDS = new Set([
   "give",
   "need",
 ])
-
-const DOMAIN_TERMS: Record<string, string[]> = {
-  lifting: [
-    "lifting",
-    "lift",
-    "squat",
-    "bench",
-    "deadlift",
-    "press",
-    "overhead",
-    "ohp",
-    "program",
-    "sets",
-    "reps",
-    "lb",
-    "lbs",
-    "kg",
-    "bodyweight",
-  ],
-  calculus: [
-    "calculus",
-    "limits",
-    "continuity",
-    "derivatives",
-    "integrals",
-    "integration",
-    "series",
-    "taylor",
-    "optimization",
-    "curriculum",
-  ],
-  codex: ["codex", "@codex", "implementation", "bug", "fix", "repo", "files", "test"],
-  product: [
-    "product",
-    "management",
-    "pm",
-    "interview",
-    "metrics",
-    "execution",
-    "study",
-    "prep",
-    "leadership",
-  ],
-  golf: [
-    "golf",
-    "golfer",
-    "swing",
-    "club",
-    "driver",
-    "iron",
-    "speed",
-    "mobility",
-    "rotator",
-    "shoulder",
-    "performance",
-    "training",
-  ],
-  nutrition: [
-    "nutrition",
-    "diet",
-    "protein",
-    "carbs",
-    "calories",
-    "meals",
-    "recovery",
-    "sleep",
-    "bodyweight",
-  ],
-}
-
-const OPEN_LOOP_TERMS = [
-  "todo",
-  "next step",
-  "next steps",
-  "we should",
-  "after this",
-  "come back",
-  "fix later",
-  "run codex",
-  "codex",
-  "@codex",
-  "implementation prompt",
-  "turn that into",
-  "do you want me",
-  "would you like",
-  "plan:",
-  "debug",
-  "bug",
-  "unresolved",
-]
-
-const EXERCISES = [
-  "bench press",
-  "overhead press",
-  "front squat",
-  "barbell row",
-  "deadlift",
-  "bodyweight",
-  "squat",
-  "bench",
-  "press",
-  "row",
-]
 
 function tokenize(text: string): string[] {
   return text
@@ -235,12 +181,127 @@ function transcriptForThread(thread: AssistantChatThreadInput): string {
   return lines.join("\n").slice(0, MAX_THREAD_TEXT)
 }
 
-function requestDomainTokens(request: string): string[] {
-  const lower = request.toLowerCase()
-  const domains = Object.entries(DOMAIN_TERMS)
-    .filter(([name, terms]) => lower.includes(name) || terms.some((term) => lower.includes(term)))
-    .flatMap(([, terms]) => terms)
-  return unique([...tokenize(request), ...domains])
+function hasCodexTask(thread: AssistantChatThreadInput): boolean {
+  return thread.messages.some((message) => {
+    const text = message.text.trim().toLowerCase()
+    return Boolean(message.taskId || message.isTaskCard || text.startsWith("@codex "))
+  })
+}
+
+function firstUserSnippet(thread: AssistantChatThreadInput): string {
+  const message = thread.messages.find(
+    (item) =>
+      item.role === "user" &&
+      item.text?.trim() &&
+      !item.isTaskCard &&
+      !isAssistantControlMessage(item.text)
+  )
+  return truncate(message?.text || "", DIGEST_SNIPPET_CHARS)
+}
+
+function recentMessageSnippets(thread: AssistantChatThreadInput): string[] {
+  return thread.messages
+    .filter((message) => message.text?.trim() && !isAssistantControlMessage(message.text))
+    .slice(-2)
+    .map((message) => truncate(`${message.role}: ${message.text}`, DIGEST_SNIPPET_CHARS))
+}
+
+function buildThreadDigest(threads: AssistantChatThreadInput[]): string {
+  let usedChars = 0
+  const blocks: string[] = []
+
+  for (const thread of [...threads].sort((a, b) => b.updatedAt - a.updatedAt)) {
+    const block = [
+      `<thread id="${thread.id}">`,
+      `Title: ${displayTitleForThread(thread)}`,
+      `Summary: ${truncate(thread.summary || "", DIGEST_SNIPPET_CHARS)}`,
+      `Category: ${thread.category || "unknown"}`,
+      `Updated: ${new Date(thread.updatedAt).toISOString()}`,
+      `Message count: ${thread.messages.length}`,
+      `Contains task card: ${hasCodexTask(thread) ? "yes" : "no"}`,
+      `First user message: ${firstUserSnippet(thread) || "none"}`,
+      "Recent messages:",
+      ...recentMessageSnippets(thread).map((snippet) => `- ${snippet}`),
+      "</thread>",
+    ].join("\n")
+
+    if (usedChars + block.length > MAX_DIGEST_CHARS) break
+    blocks.push(block)
+    usedChars += block.length
+  }
+
+  return blocks.join("\n\n")
+}
+
+function previousTaskBlock(
+  previousTask?: {
+    requestText: string
+    interpretedGoal: string
+    taskKind: AssistantTaskKind
+    resultSummary: string
+    sources: AssistantSource[]
+  } | null
+): string {
+  if (!previousTask) return "No previous Assistant task context."
+  return [
+    `Previous request: ${previousTask.requestText}`,
+    `Previous interpreted goal: ${previousTask.interpretedGoal}`,
+    `Previous task kind: ${previousTask.taskKind}`,
+    `Previous result summary: ${truncate(previousTask.resultSummary, 800)}`,
+    "Previous sources:",
+    ...previousTask.sources
+      .slice(0, 8)
+      .map((source) => `- ${source.title} (${source.chatId}): ${source.reason}`),
+  ].join("\n")
+}
+
+async function planAssistantRun(args: {
+  request: string
+  threads: AssistantChatThreadInput[]
+  previousTask?: {
+    requestText: string
+    interpretedGoal: string
+    taskKind: AssistantTaskKind
+    resultSummary: string
+    sources: AssistantSource[]
+  } | null
+}): Promise<AssistantPlan | null> {
+  if (!process.env.OPENAI_API_KEY) return null
+
+  const digest = buildThreadDigest(args.threads)
+  const prompt = `User request:
+${args.request}
+
+Previous task context:
+${previousTaskBlock(args.previousTask)}
+
+Candidate chat digest, most recently updated first:
+${digest || "No candidate chats."}
+
+Plan this Assistant run.
+Rules:
+- Classify the request into exactly one taskKind.
+- Choose artifactFormat "document" for prose artifacts and "csv" for spreadsheet/table data extraction requests; otherwise use null.
+- Select at most 8 chats, and only when the digest shows genuine relevance.
+- For selectedChats and openLoops, use only chat IDs from the digest.
+- For open-loop or Codex prompt drafting requests, fill openLoops with at most 6 genuinely unfinished threads.
+- For other task kinds, leave openLoops empty.
+- Keep interpretedGoal user-facing and concise.`
+
+  try {
+    const { parsed } = await createParsedResponse({
+      kind: "assistant",
+      input: prompt,
+      schema: AssistantPlanningSchema,
+      schemaName: "assistant_run_plan",
+      instructions:
+        "You plan a product-level cross-chat Assistant run. Use the provided chat digest only and return conservative structured output.",
+    })
+    return parsed
+  } catch (error) {
+    console.error("[Assistant] Model planning failed, using deterministic fallback:", error)
+    return null
+  }
 }
 
 function classifyTaskKind(request: string): AssistantTaskKind {
@@ -252,9 +313,7 @@ function classifyTaskKind(request: string): AssistantTaskKind {
     lower.includes("unresolved") ||
     lower.includes("follow-up") ||
     lower.includes("follow up") ||
-    lower.includes("come back") ||
-    lower.includes("planned to run codex") ||
-    lower.includes("need a codex")
+    lower.includes("come back")
 
   if (lower.includes("codex") && (lower.includes("prompt") || lower.includes("follow"))) {
     return "codex_prompt_draft"
@@ -267,9 +326,9 @@ function classifyTaskKind(request: string): AssistantTaskKind {
   if (
     lower.includes("spreadsheet") ||
     lower.includes("csv") ||
+    lower.includes("table") ||
     lower.includes("extract") ||
-    lower.includes("curriculum") ||
-    lower.includes("study guide") ||
+    lower.includes("export") ||
     lower.includes("brief") ||
     lower.includes("document") ||
     lower.includes("plan") ||
@@ -288,28 +347,27 @@ function classifyTaskKind(request: string): AssistantTaskKind {
   return "clarification"
 }
 
-function interpretedGoalFor(kind: AssistantTaskKind, request: string): string {
+function fallbackArtifactFormat(request: string, taskKind: AssistantTaskKind): AssistantArtifactFormat {
+  if (taskKind !== "cross_chat_artifact") return null
   const lower = request.toLowerCase()
+  if (
+    lower.includes("spreadsheet") ||
+    lower.includes("csv") ||
+    lower.includes("table") ||
+    lower.includes("extract") ||
+    lower.includes("export")
+  ) {
+    return "csv"
+  }
+  return "document"
+}
+
+function genericInterpretedGoal(kind: AssistantTaskKind, request: string): string {
   if (kind === "codex_prompt_draft") {
-    return "Find likely unfinished Codex plans and draft a clean @codex prompt the user can run."
+    return "Find likely unfinished implementation work and draft a clean @codex prompt the user can run."
   }
   if (kind === "open_loops") {
     return "Review recent chats for unfinished work, explain why each looks open, and suggest the next action."
-  }
-  if (kind === "cross_chat_artifact" && lower.includes("lifting")) {
-    return "Look across lifting-related chats, extract only stated numbers/program details, and generate a CSV download."
-  }
-  if (kind === "cross_chat_artifact" && lower.includes("curriculum")) {
-    return "Collect relevant learning chats and turn the available context into a downloadable curriculum document."
-  }
-  if (kind === "cross_chat_artifact" && lower.includes("plan")) {
-    return "Synthesize relevant chats into a practical downloadable plan with evidence, priorities, and open questions."
-  }
-  if (
-    kind === "cross_chat_artifact" &&
-    (lower.includes("overview") || lower.includes("reference") || lower.includes("personal numbers"))
-  ) {
-    return "Create a concise reference artifact from the user's stated details across relevant chats."
   }
   if (kind === "cross_chat_artifact") {
     return "Collect relevant chats, organize the available context, and generate a downloadable artifact."
@@ -317,7 +375,18 @@ function interpretedGoalFor(kind: AssistantTaskKind, request: string): string {
   if (kind === "current_chat_help") {
     return "Use the current chat plus available workspace context to prepare the next product-level action."
   }
-  return "Interpret the request and review available chat context without mutating existing chats."
+  return truncate(request, 140) || "Interpret the request and review available chat context."
+}
+
+function fallbackPlan(request: string): AssistantPlan {
+  const taskKind = classifyTaskKind(request)
+  return {
+    taskKind,
+    interpretedGoal: genericInterpretedGoal(taskKind, request),
+    artifactFormat: fallbackArtifactFormat(request, taskKind),
+    selectedChats: [],
+    openLoops: [],
+  }
 }
 
 function scoreThread(thread: AssistantChatThreadInput, tokens: string[]): ScoredThread {
@@ -327,7 +396,7 @@ function scoreThread(thread: AssistantChatThreadInput, tokens: string[]): Scored
 
   let matchScore = 0
   const matchedTerms: string[] = []
-  for (const token of tokens) {
+  for (const token of unique(tokens)) {
     let matched = false
     if (title.includes(token)) {
       matchScore += 5
@@ -366,13 +435,15 @@ function selectRelevantThreads(
   threads: AssistantChatThreadInput[],
   limit = 8
 ): ScoredThread[] {
-  const tokens = requestDomainTokens(request)
+  const tokens = tokenize(request)
+  if (tokens.length === 0) return []
   const scored = threads.map((thread) => scoreThread(thread, tokens))
   scored.sort((a, b) => b.score - a.score || b.thread.updatedAt - a.thread.updatedAt)
   return scored.filter((item) => item.score > 0).slice(0, limit)
 }
 
 function findSnippet(thread: AssistantChatThreadInput, tokens: string[]): string {
+  const uniqueTokens = unique(tokens)
   const fragments = thread.messages
     .filter((message) => message.text)
     .flatMap((message) => message.text.split(/(?<=[.!?])\s+|\n+/))
@@ -381,7 +452,7 @@ function findSnippet(thread: AssistantChatThreadInput, tokens: string[]): string
 
   const scored = fragments.map((fragment) => {
     const lower = fragment.toLowerCase()
-    const score = tokens.reduce((sum, token) => sum + (lower.includes(token) ? 1 : 0), 0)
+    const score = uniqueTokens.reduce((sum, token) => sum + (lower.includes(token) ? 1 : 0), 0)
     return { fragment, score }
   })
 
@@ -401,142 +472,39 @@ function sourcesFromScored(scored: ScoredThread[]): AssistantSource[] {
   }))
 }
 
-function splitIntoExtractionSegments(text: string): string[] {
-  return text
-    .split(/\n+|[.;]\s+|,\s+(?=(?:and\s+)?(?:squat|bench|deadlift|overhead|press|bodyweight|front|row))/i)
-    .map((segment) => segment.trim())
-    .filter(Boolean)
-}
+function selectedThreadsFromPlan(args: {
+  plan: AssistantPlan
+  threads: AssistantChatThreadInput[]
+  request: string
+}): ScoredThread[] {
+  const threadMap = new Map(args.threads.map((thread) => [thread.id, thread]))
+  const tokens = tokenize(args.request)
+  const selected: ScoredThread[] = []
 
-function extractExercise(segment: string): string {
-  const lower = segment.toLowerCase()
-  return EXERCISES.find((exercise) => lower.includes(exercise)) || ""
-}
-
-function extractRepsSets(segment: string): string {
-  const setsByReps = segment.match(/\b(\d+)\s*[xX]\s*(\d+)\b/)
-  if (setsByReps) return `${setsByReps[1]}x${setsByReps[2]}`
-
-  const setsOf = segment.match(/\b(\d+)\s+sets?\s+(?:of\s+)?(\d+)\b/i)
-  if (setsOf) return `${setsOf[1]}x${setsOf[2]}`
-
-  const reps = segment.match(/\b(?:for\s+)?(\d+)\s+reps?\b/i)
-  if (reps) return `${reps[1]} reps`
-
-  return ""
-}
-
-function extractTimeframe(segment: string, thread: AssistantChatThreadInput): string {
-  const lower = segment.toLowerCase()
-  if (lower.includes("next block") || lower.includes("next program")) return "next block"
-  if (lower.includes("current")) return "current"
-  if (lower.includes("today")) return "today"
-  if (lower.includes("last week")) return "last week"
-  return thread.updatedAt ? new Date(thread.updatedAt).toLocaleDateString("en-US") : ""
-}
-
-function extractLiftingRows(scored: ScoredThread[]): LiftingCsvRow[] {
-  const rows: LiftingCsvRow[] = []
-  const seen = new Set<string>()
-
-  for (const item of scored) {
-    for (const message of item.thread.messages) {
-      if (!message.text) continue
-      for (const segment of splitIntoExtractionSegments(message.text)) {
-        const exercise = extractExercise(segment)
-        const valueMatch = segment.match(/\b(\d+(?:\.\d+)?)\s*(lb|lbs|pounds|kg|kgs|%)\b/i)
-        if (!exercise || !valueMatch) continue
-
-        const key = `${item.thread.id}:${exercise}:${valueMatch[1]}:${truncate(segment, 120)}`
-        if (seen.has(key)) continue
-        seen.add(key)
-
-        const lower = segment.toLowerCase()
-        const category = lower.includes("program") || lower.includes("5x5") || lower.includes("next block")
-          ? "program"
-          : exercise === "bodyweight"
-            ? "bodyweight"
-            : "current strength"
-
-        rows.push({
-          sourceChatTitle: displayTitleForThread(item.thread),
-          sourceChatId: item.thread.id,
-          dateOrTimeframe: extractTimeframe(segment, item.thread),
-          category,
-          item: exercise === "bench" ? "bench press" : exercise,
-          value: valueMatch[1],
-          unit: valueMatch[2].toLowerCase().replace("pounds", "lb").replace("lbs", "lb").replace("kgs", "kg"),
-          repsSets: extractRepsSets(segment),
-          notes: lower.includes("shoulder") ? "shoulder note mentioned" : "",
-          confidence: exercise && valueMatch ? "high" : "medium",
-          sourceSnippet: truncate(segment, 220),
-        })
-      }
+  for (const item of args.plan.selectedChats.slice(0, 8)) {
+    const thread = threadMap.get(item.chatId)
+    if (!thread) {
+      console.warn(`[Assistant] Planner returned unknown chatId: ${item.chatId}`)
+      continue
     }
+    selected.push({
+      thread,
+      score: item.confidence,
+      confidence: item.confidence,
+      reason: item.reason,
+      snippet: findSnippet(thread, tokens),
+    })
   }
 
-  return rows
+  return selected
 }
 
-function buildLiftingArtifact(request: string, scored: ScoredThread[]): {
-  artifact?: AssistantArtifact
-  summary: string
-  missingInfo: string[]
-} {
-  const rows = extractLiftingRows(scored)
-  const headers = [
-    "sourceChatTitle",
-    "sourceChatId",
-    "dateOrTimeframe",
-    "category",
-    "item",
-    "value",
-    "unit",
-    "repsSets",
-    "notes",
-    "confidence",
-    "sourceSnippet",
-  ]
-
-  if (rows.length === 0) {
-    return {
-      summary:
-        "I reviewed the available lifting-related chats, but did not find explicit exercise numbers with units to place in a CSV.",
-      missingInfo: ["No explicit exercise values with units were found in the reviewed chats."],
-    }
-  }
-
-  const content = rowsToCsv(headers, rows)
-  const artifact = makeAssistantArtifact({
-    kind: "csv",
-    filename: `${slugifyFilenamePart(request)}.csv`,
-    content,
-    rowCount: rows.length,
-  })
-
-  return {
-    artifact,
-    summary: `I found ${rows.length} stated lifting/program data point${rows.length === 1 ? "" : "s"} and generated a CSV. Unknown fields are left blank rather than inferred.`,
-    missingInfo: rows.some((row) => !row.repsSets)
-      ? ["Some rows did not include reps or sets in the source text."]
-      : [],
-  }
-}
-
-function inferDocumentTitle(request: string): string {
-  const lower = request.toLowerCase()
-  if (lower.includes("calculus")) return "Calculus Curriculum"
-  if (lower.includes("golf") && lower.includes("plan")) return "6-8 Week Golf Performance Plan"
-  if (lower.includes("personal") && (lower.includes("number") || lower.includes("info"))) {
-    return "Personal Numbers and Reference Overview"
-  }
-  if (lower.includes("product") || lower.includes("pm ")) return "Product Management Study Guide"
-  if (lower.includes("brief")) return "Assistant Brief"
-  return "Assistant Workspace Document"
+function genericArtifactTitle(request: string): string {
+  return truncate(request.replace(/^@\w+\s+/i, ""), 72) || "Assistant Workspace Artifact"
 }
 
 function extractTopicBullets(request: string, scored: ScoredThread[]): string[] {
-  const tokens = requestDomainTokens(request)
+  const tokens = tokenize(request)
   const bullets: string[] = []
   const seen = new Set<string>()
 
@@ -558,41 +526,26 @@ function extractTopicBullets(request: string, scored: ScoredThread[]): string[] 
   return bullets.slice(0, 12)
 }
 
-function buildDocumentArtifact(request: string, scored: ScoredThread[]): {
+function buildDocumentArtifact(args: {
+  request: string
+  interpretedGoal: string
+  scored: ScoredThread[]
+}): {
   artifact?: AssistantArtifact
   summary: string
   missingInfo: string[]
 } {
-  const title = inferDocumentTitle(request)
-  const bullets = extractTopicBullets(request, scored)
+  const title = genericArtifactTitle(args.request)
+  const bullets = extractTopicBullets(args.request, args.scored)
 
-  if (scored.length === 0 || bullets.length === 0) {
+  if (args.scored.length === 0 || bullets.length === 0) {
     return {
       summary: "I did not find enough matching chat context to generate a useful document.",
       missingInfo: ["No relevant source snippets were found in available chats."],
     }
   }
 
-  const lower = request.toLowerCase()
-  const suggestedStructure = lower.includes("calculus")
-    ? [
-        "Functions, graphs, and prerequisite review",
-        "Limits and continuity",
-        "Derivative rules and interpretation",
-        "Applications of derivatives",
-        "Basic integrals and the fundamental theorem",
-        "Integration techniques",
-        "Infinite series and Taylor polynomials",
-        "Mixed review and applied problems",
-      ]
-    : [
-        "Key context gathered from matching chats",
-        "Decisions or recommendations explicitly supported by the chats",
-        "Source notes to review before using the artifact",
-        "Missing details to confirm",
-      ]
-
-  const sourceNotes = scored.slice(0, 6).map((item) => {
+  const sourceNotes = args.scored.slice(0, 6).map((item) => {
     const title = displayTitleForThread(item.thread)
     return `- ${title} (${item.thread.id}): ${item.snippet}`
   })
@@ -601,22 +554,27 @@ function buildDocumentArtifact(request: string, scored: ScoredThread[]): {
     `# ${title}`,
     "",
     "## Interpreted Goal",
-    interpretedGoalFor("cross_chat_artifact", request),
+    args.interpretedGoal,
     "",
     "## What I Found",
     ...bullets.map((bullet) => `- ${bullet}`),
     "",
-    "## Suggested Artifact Structure",
-    ...suggestedStructure.map((item, index) => `${index + 1}. ${item}`),
+    "## Suggested Structure",
+    "1. Key context gathered from matching chats",
+    "2. Decisions or recommendations explicitly supported by the chats",
+    "3. Source notes to review before using the artifact",
+    "4. Missing details to confirm",
     "",
     "## Source Notes",
     ...sourceNotes,
     "",
     "## Sources Used",
-    ...scored.map((item) => `- ${displayTitleForThread(item.thread)} (${item.thread.id}): ${item.reason}`),
+    ...args.scored.map(
+      (item) => `- ${displayTitleForThread(item.thread)} (${item.thread.id}): ${item.reason}`
+    ),
     "",
     "## Missing or Ambiguous Information",
-    "- Timing, exact workload, and mastery checks should be confirmed by the user.",
+    "- Timing, exact scope, and unsupported details should be confirmed by the user.",
     "- The Assistant used only the provided demo chat context and did not invent outside facts.",
     "",
   ].join("\n")
@@ -627,20 +585,42 @@ function buildDocumentArtifact(request: string, scored: ScoredThread[]): {
       filename: `${slugifyFilenamePart(title)}.md`,
       content,
     }),
-    summary: `I created a downloadable ${title.toLowerCase()} from ${scored.length} source chat${scored.length === 1 ? "" : "s"}.`,
+    summary: `I created a downloadable artifact from ${args.scored.length} source chat${args.scored.length === 1 ? "" : "s"}.`,
     missingInfo: ["Timing and exact scope may need user confirmation."],
   }
 }
 
-function hasQuestionEnding(text: string): boolean {
-  return /\?\s*$/.test(text.trim()) || /\b(do you want|would you like|should i|can you confirm)\b/i.test(text)
-}
+function buildCsvArtifact(request: string, scored: ScoredThread[]): {
+  artifact?: AssistantArtifact
+  summary: string
+  missingInfo: string[]
+} {
+  if (scored.length === 0) {
+    return {
+      summary: "I did not find enough matching chat context to generate a useful CSV.",
+      missingInfo: ["No relevant source snippets were found in available chats."],
+    }
+  }
 
-function hasCodexTask(thread: AssistantChatThreadInput): boolean {
-  return thread.messages.some((message) => {
-    const text = message.text.trim().toLowerCase()
-    return Boolean(message.taskId || message.isTaskCard || text.startsWith("@codex "))
-  })
+  const headers = ["sourceChatTitle", "sourceChatId", "reason", "snippet", "confidence"]
+  const rows = scored.map((item) => ({
+    sourceChatTitle: displayTitleForThread(item.thread),
+    sourceChatId: item.thread.id,
+    reason: item.reason,
+    snippet: item.snippet,
+    confidence: Math.round(item.confidence * 100) / 100,
+  }))
+
+  return {
+    artifact: makeAssistantArtifact({
+      kind: "csv",
+      filename: `${slugifyFilenamePart(genericArtifactTitle(request))}.csv`,
+      content: rowsToCsv(headers, rows),
+      rowCount: rows.length,
+    }),
+    summary: `I created a generic CSV organizer with ${rows.length} source chat${rows.length === 1 ? "" : "s"}.`,
+    missingInfo: ["Structured row extraction requires model-assisted generation."],
+  }
 }
 
 function buildCodexPrompt(thread: AssistantChatThreadInput, reason: string): string {
@@ -657,7 +637,7 @@ function buildCodexPrompt(thread: AssistantChatThreadInput, reason: string): str
     recent,
     "",
     "Task:",
-    reason.includes("Codex")
+    reason.toLowerCase().includes("codex")
       ? "Inspect the relevant files, implement the planned fix, and add or update focused regression coverage."
       : "Turn the plan from this chat into the smallest safe implementation, preserving existing behavior.",
     "",
@@ -668,90 +648,47 @@ function buildCodexPrompt(thread: AssistantChatThreadInput, reason: string): str
   ].join("\n")
 }
 
-function detectOpenLoop(thread: AssistantChatThreadInput, codexOnly: boolean): AssistantOpenLoopItem | null {
-  const messages = thread.messages.filter(
-    (message) => message.text?.trim() && !isAssistantControlMessage(message.text)
-  )
-  if (messages.length === 0) return null
-
-  const transcript = messages.map((message) => message.text).join("\n").toLowerCase()
-  const last = messages[messages.length - 1]
-  const lastText = last.text || ""
-  const recentText = messages.slice(-3).map((message) => message.text).join("\n")
-  const lowerRecent = recentText.toLowerCase()
-  const codexMentioned = /\bcodex\b|@codex/i.test(transcript)
-  const codexPlannedButNotRun = codexMentioned && !hasCodexTask(thread)
-
-  if (codexOnly && !codexPlannedButNotRun && !codexMentioned) return null
-
-  const reasons: string[] = []
-  let confidence = 0
-
-  if (codexPlannedButNotRun) {
-    reasons.push("The chat discussed running Codex, but no Codex task card appears in the thread.")
-    confidence += 0.42
-  }
-  if (last.role === "assistant" && hasQuestionEnding(lastText)) {
-    reasons.push("The last assistant message asks for a decision or follow-up.")
-    confidence += 0.28
-  }
-  if (last.role === "user") {
-    reasons.push("The last message is a user request with no later assistant response in this thread.")
-    confidence += 0.24
-  }
-  const matchedSignals = OPEN_LOOP_TERMS.filter((term) => lowerRecent.includes(term))
-  if (matchedSignals.length > 0) {
-    reasons.push(`Recent messages include open-loop language: ${matchedSignals.slice(0, 3).join(", ")}.`)
-    confidence += Math.min(0.3, matchedSignals.length * 0.08)
-  }
-
-  if (reasons.length === 0) return null
-
-  const reason = reasons.join(" ")
-  const nextAction = codexPlannedButNotRun
-    ? "Review the plan and run a focused Codex prompt."
-    : last.role === "assistant" && hasQuestionEnding(lastText)
-      ? "Answer the assistant's question or ask the Assistant to draft the next prompt."
-      : "Summarize where the chat stopped and choose the next concrete step."
-
-  return {
-    id: `${thread.id}-open-loop`,
-    chatTitle: displayTitleForThread(thread),
-    chatId: thread.id,
-    lastUpdated: thread.updatedAt,
-    reason,
-    nextAction,
-    canAssistantHelp: true,
-    suggestedAction: codexPlannedButNotRun ? "Create Codex prompt" : "Summarize where we left off",
-    draftCodexPrompt: codexPlannedButNotRun ? buildCodexPrompt(thread, reason) : undefined,
-    snippet: truncate(recentText, 320),
-    confidence: Math.min(0.97, Math.max(0.55, confidence)),
-  }
-}
-
-function buildOpenLoopsResult(
-  request: string,
-  threads: AssistantChatThreadInput[],
-  taskKind: AssistantTaskKind
-): {
+function buildOpenLoopsFromPlan(args: {
+  plan: AssistantPlan
+  threads: AssistantChatThreadInput[]
+  request: string
+  planningWasFallback: boolean
+}): {
   openLoops: AssistantOpenLoopItem[]
   sources: AssistantSource[]
   summary: string
   actions: AssistantProposedAction[]
 } {
-  const lower = request.toLowerCase()
-  const codexOnly = taskKind === "codex_prompt_draft" || (lower.includes("codex") && !lower.includes("anything"))
-  const wantsWeek = lower.includes("week")
-  const oneWeekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000
-  const candidates = wantsWeek ? threads.filter((thread) => thread.updatedAt >= oneWeekAgo) : threads
-
-  const openLoops = candidates
-    .map((thread) => detectOpenLoop(thread, codexOnly))
+  const threadMap = new Map(args.threads.map((thread) => [thread.id, thread]))
+  const tokens = tokenize(args.request)
+  const loops = args.plan.openLoops
+    .slice(0, OPEN_LOOP_LIMIT)
+    .map((loop) => {
+      const thread = threadMap.get(loop.chatId)
+      if (!thread) {
+        console.warn(`[Assistant] Planner returned unknown open-loop chatId: ${loop.chatId}`)
+        return null
+      }
+      const draftCodexPrompt = loop.needsCodexPrompt ? buildCodexPrompt(thread, loop.reason) : undefined
+      const item: AssistantOpenLoopItem = {
+        id: `${thread.id}-open-loop`,
+        chatTitle: displayTitleForThread(thread),
+        chatId: thread.id,
+        lastUpdated: thread.updatedAt,
+        reason: loop.reason,
+        nextAction: loop.nextAction,
+        canAssistantHelp: true,
+        suggestedAction: loop.needsCodexPrompt ? "Create Codex prompt" : "Summarize where we left off",
+        draftCodexPrompt,
+        snippet: findSnippet(thread, tokens),
+        confidence: loop.confidence,
+      }
+      return item
+    })
     .filter((item): item is AssistantOpenLoopItem => Boolean(item))
     .sort((a, b) => b.confidence - a.confidence || (b.lastUpdated || 0) - (a.lastUpdated || 0))
-    .slice(0, OPEN_LOOP_LIMIT)
 
-  const sources = openLoops.map((item) => ({
+  const sources = loops.map((item) => ({
     chatId: item.chatId,
     title: item.chatTitle,
     updatedAt: item.lastUpdated,
@@ -761,7 +698,7 @@ function buildOpenLoopsResult(
   }))
 
   const actions: AssistantProposedAction[] = []
-  for (const item of openLoops) {
+  for (const item of loops) {
     actions.push({
       id: `${item.id}-open`,
       label: "Open chat",
@@ -780,12 +717,14 @@ function buildOpenLoopsResult(
   }
 
   return {
-    openLoops,
+    openLoops: loops,
     sources,
     summary:
-      openLoops.length === 0
-        ? "I reviewed the available recent chats and did not find a clear unfinished thread."
-        : `I found ${openLoops.length} likely unfinished chat${openLoops.length === 1 ? "" : "s"} and prepared next actions.`,
+      loops.length === 0
+        ? args.planningWasFallback
+          ? "I reviewed the available chats with the deterministic organizer, but model-assisted open-loop detection was unavailable."
+          : "I reviewed the available recent chats and did not find a clear unfinished thread."
+        : `I found ${loops.length} likely unfinished chat${loops.length === 1 ? "" : "s"} and prepared next actions.`,
     actions,
   }
 }
@@ -822,6 +761,13 @@ export function mergeAssistantThreads(
   return Array.from(map.values()).sort((a, b) => b.updatedAt - a.updatedAt)
 }
 
+function sourcesForNonArtifact(scored: ScoredThread[]): string {
+  if (scored.length === 0) {
+    return "I reviewed the available chats but did not find a strong match for this request."
+  }
+  return `I found ${scored.length} relevant chat${scored.length === 1 ? "" : "s"} to review for this request.`
+}
+
 export async function createAssistantTaskResult(args: {
   id: string
   request: string
@@ -835,9 +781,7 @@ export async function createAssistantTaskResult(args: {
   } | null
 }): Promise<AssistantTaskResult> {
   const now = Date.now()
-  const initialKind = classifyTaskKind(args.request)
-  const taskKind =
-    initialKind === "clarification" && args.previousTask ? args.previousTask.taskKind : initialKind
+  const progress: AssistantTaskStatus[] = ["queued", "interpreting", "searching", "reviewing"]
   const effectiveRequest = args.previousTask
     ? [
         `Previous Assistant request: ${args.previousTask.requestText}`,
@@ -846,70 +790,120 @@ export async function createAssistantTaskResult(args: {
         `Follow-up request: ${args.request}`,
       ].join("\n")
     : args.request
-  const interpretedGoal = args.previousTask
-    ? `Continue the previous Assistant task and apply this follow-up: ${args.request}`
-    : interpretedGoalFor(taskKind, args.request)
-  const progress: AssistantTaskStatus[] = ["queued", "interpreting", "searching", "reviewing"]
 
-  if (taskKind === "open_loops" || taskKind === "codex_prompt_draft") {
-    const result = buildOpenLoopsResult(args.request, args.threads, taskKind)
+  const modelPlan = await planAssistantRun({
+    request: args.request,
+    threads: args.threads,
+    previousTask: args.previousTask ?? null,
+  })
+  const planningWasFallback = !modelPlan
+  const plan = modelPlan || fallbackPlan(args.request)
+
+  if (planningWasFallback && (plan.taskKind === "open_loops" || plan.taskKind === "codex_prompt_draft")) {
+    const scored = selectRelevantThreads(effectiveRequest, args.threads, OPEN_LOOP_LIMIT)
+    plan.openLoops = scored.map((item) => ({
+      chatId: item.thread.id,
+      reason: item.reason,
+      nextAction: "Review the matching chat and choose the next concrete step.",
+      needsCodexPrompt: plan.taskKind === "codex_prompt_draft",
+      confidence: item.confidence,
+    }))
+  }
+
+  if (plan.taskKind === "open_loops" || plan.taskKind === "codex_prompt_draft") {
+    const result = buildOpenLoopsFromPlan({
+      plan,
+      threads: args.threads,
+      request: effectiveRequest,
+      planningWasFallback,
+    })
+    const missingInfo =
+      result.openLoops.length === 0
+        ? ["No clear unfinished chats matched the requested scope."]
+        : []
+    if (planningWasFallback) missingInfo.push(FALLBACK_NOTE)
+
     return {
       id: args.id,
       createdAt: now,
       updatedAt: now,
       status: result.openLoops.length > 0 ? "ready" : "no_results",
       requestText: args.request,
-      interpretedGoal,
-      taskKind,
+      interpretedGoal: plan.interpretedGoal,
+      taskKind: plan.taskKind,
       progress: [...progress, "ready"],
       sources: result.sources,
       resultSummary: result.summary,
       openLoops: result.openLoops,
       proposedActions: result.actions,
-      missingInfo:
-        result.openLoops.length === 0
-          ? ["No clear unfinished chats matched the requested scope."]
-          : undefined,
+      missingInfo: missingInfo.length > 0 ? missingInfo : undefined,
       reviewedChatCount: args.threads.length,
     }
   }
 
-  const scored = selectRelevantThreads(effectiveRequest, args.threads)
+  const scored = planningWasFallback
+    ? selectRelevantThreads(effectiveRequest, args.threads)
+    : selectedThreadsFromPlan({ plan, threads: args.threads, request: effectiveRequest })
   const sources = sourcesFromScored(scored)
-  const lower = effectiveRequest.toLowerCase()
-  let artifactResult =
-    lower.includes("lifting") || lower.includes("spreadsheet") || lower.includes("csv")
-      ? buildLiftingArtifact(args.request, scored)
-      : buildDocumentArtifact(args.request, scored)
+  const artifactFormat = plan.artifactFormat
 
-  if (
-    scored.length > 0 &&
-    !(lower.includes("lifting") || lower.includes("spreadsheet") || lower.includes("csv"))
-  ) {
-    const modelArtifact = await generateAssistantDocumentArtifact({
-      request: effectiveRequest,
-      interpretedGoal,
-      title: inferDocumentTitle(args.request),
-      sources: scored.slice(0, 8).map((item) => ({
-        chatId: item.thread.id,
-        title: displayTitleForThread(item.thread),
-        updatedAt: item.thread.updatedAt,
-        reason: item.reason,
-        snippet: item.snippet,
-        transcript: transcriptForThread(item.thread),
-      })),
+  let artifactResult: {
+    artifact?: AssistantArtifact
+    summary: string
+    missingInfo: string[]
+  } = {
+    summary: sourcesForNonArtifact(scored),
+    missingInfo: [],
+  }
+
+  if (artifactFormat === "document") {
+    artifactResult = buildDocumentArtifact({
+      request: args.request,
+      interpretedGoal: plan.interpretedGoal,
+      scored,
     })
+    if (!planningWasFallback && scored.length > 0) {
+      const modelArtifact = await generateAssistantDocumentArtifact({
+        request: effectiveRequest,
+        interpretedGoal: plan.interpretedGoal,
+        title: genericArtifactTitle(args.request),
+        sources: scored.slice(0, 8).map((item) => ({
+          chatId: item.thread.id,
+          title: displayTitleForThread(item.thread),
+          updatedAt: item.thread.updatedAt,
+          reason: item.reason,
+          snippet: item.snippet,
+          transcript: transcriptForThread(item.thread),
+        })),
+      })
+      if (modelArtifact) artifactResult = modelArtifact
+    }
+  } else if (artifactFormat === "csv") {
+    artifactResult = buildCsvArtifact(args.request, scored)
+    if (!planningWasFallback && scored.length > 0) {
+      const modelArtifact = await generateAssistantCsvArtifact({
+        request: effectiveRequest,
+        interpretedGoal: plan.interpretedGoal,
+        title: genericArtifactTitle(args.request),
+        sources: scored.slice(0, 8).map((item) => ({
+          chatId: item.thread.id,
+          title: displayTitleForThread(item.thread),
+          updatedAt: item.thread.updatedAt,
+          reason: item.reason,
+          snippet: item.snippet,
+          transcript: transcriptForThread(item.thread),
+        })),
+      })
+      if (modelArtifact) artifactResult = modelArtifact
+    }
+  } else if (scored.length === 0) {
+    artifactResult.missingInfo.push("No relevant source snippets were found in available chats.")
+  }
 
-    if (modelArtifact) {
-      artifactResult = modelArtifact
-    } else if (artifactResult.artifact) {
-      artifactResult = {
-        ...artifactResult,
-        missingInfo: [
-          ...artifactResult.missingInfo,
-          "Model-assisted synthesis was unavailable, so this demo used a deterministic organizer.",
-        ],
-      }
+  if (planningWasFallback) {
+    artifactResult = {
+      ...artifactResult,
+      missingInfo: [...artifactResult.missingInfo, FALLBACK_NOTE],
     }
   }
 
@@ -938,8 +932,8 @@ export async function createAssistantTaskResult(args: {
     updatedAt: now,
     status: noResults ? "no_results" : "ready",
     requestText: args.request,
-    interpretedGoal,
-    taskKind,
+    interpretedGoal: plan.interpretedGoal,
+    taskKind: plan.taskKind,
     progress: [...progress, artifactResult.artifact ? "generating" : "ready", "ready"],
     sources,
     resultSummary: artifactResult.summary,
