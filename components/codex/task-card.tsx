@@ -117,31 +117,31 @@ export function TaskCard({
   if (!isExpanded) {
     return (
       <div
-        className="flex items-center gap-3 px-4 py-3 bg-card border border-border dark:border-muted-foreground/25 rounded-xl cursor-pointer hover:bg-muted/50 transition-colors shadow-sm dark:shadow-md dark:shadow-black/20"
+        className="flex items-center gap-3 px-4 py-3 bg-card border border-border border-l-2 border-l-thread rounded-xl cursor-pointer hover:bg-muted/40 transition-colors shadow-[0_1px_2px_rgba(0,0,0,0.03)] dark:shadow-md dark:shadow-black/20"
         onClick={() => setIsExpanded(true)}
       >
         <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
         <div className="flex items-center gap-2 flex-1 min-w-0">
           {isRunning && (
-            <Loader2 className="h-4 w-4 animate-spin text-blue-500 shrink-0" />
+            <Loader2 className="h-4 w-4 animate-spin text-primary shrink-0" />
           )}
           {task.status === "draft_ready" && (
-            <FileCode className="h-4 w-4 text-amber-500 shrink-0" />
+            <FileCode className="h-4 w-4 text-warning shrink-0" />
           )}
           {task.status === "applied" && (
-            <Check className="h-4 w-4 text-green-500 shrink-0" />
+            <Check className="h-4 w-4 text-success shrink-0" />
           )}
           {task.status === "pr_created" && (
-            <GitPullRequest className="h-4 w-4 text-purple-500 shrink-0" />
+            <GitPullRequest className="h-4 w-4 text-primary shrink-0" />
           )}
-          {hasError && <AlertCircle className="h-4 w-4 text-red-500 shrink-0" />}
+          {hasError && <AlertCircle className="h-4 w-4 text-destructive shrink-0" />}
           <span className="text-sm font-medium truncate">
             Codex task • {task.title || "Processing..."}
           </span>
         </div>
         <span
           className={cn(
-            "text-[10px] px-2 py-0.5 rounded-full shrink-0",
+            "text-[10px] uppercase tracking-[0.08em] font-medium px-2 py-0.5 rounded-full shrink-0",
             TASK_STATUS_COLORS[task.status]
           )}
         >
@@ -156,9 +156,9 @@ export function TaskCard({
   // =============================================================================
 
   return (
-    <div className="bg-card border border-border dark:border-muted-foreground/25 rounded-xl overflow-hidden shadow-sm dark:shadow-md dark:shadow-black/20">
+    <div className="bg-card border border-border border-l-2 border-l-thread rounded-xl overflow-hidden shadow-[0_2px_16px_rgba(0,0,0,0.04)] dark:shadow-md dark:shadow-black/20">
       {/* Sticky Header */}
-      <div className="sticky top-0 z-10 bg-card border-b border-border dark:border-muted-foreground/20">
+      <div className="sticky top-0 z-10 bg-card border-b border-border/60">
         {/* Title row */}
         <div
           className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-muted/30 transition-colors"
@@ -167,7 +167,7 @@ export function TaskCard({
           <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
           <div className="flex items-center gap-2 flex-1 min-w-0">
             {isRunning && (
-              <Loader2 className="h-4 w-4 animate-spin text-blue-500 shrink-0" />
+              <Loader2 className="h-4 w-4 animate-spin text-primary shrink-0" />
             )}
             <span className="text-sm font-medium truncate">
               {task.title || "Processing..."}
@@ -175,7 +175,7 @@ export function TaskCard({
           </div>
           <span
             className={cn(
-              "text-[10px] px-2 py-0.5 rounded-full shrink-0",
+              "text-[10px] uppercase tracking-[0.08em] font-medium px-2 py-0.5 rounded-full shrink-0",
               TASK_STATUS_COLORS[task.status]
             )}
           >
@@ -226,7 +226,7 @@ export function TaskCard({
                   href={task.prUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="flex items-center gap-1 text-xs text-purple-600 dark:text-purple-400 hover:underline px-2"
+                  className="flex items-center gap-1 text-xs text-primary hover:underline px-2"
                 >
                   <ExternalLink className="h-3 w-3" />
                   View PR
@@ -517,16 +517,16 @@ function ProgressView({
         <div className="flex items-center gap-3">
           <span
             className={cn(
-              "text-xs font-medium px-2.5 py-1 rounded-full transition-all duration-300",
+              "text-[10px] uppercase tracking-[0.08em] font-medium px-2.5 py-1 rounded-full transition-all duration-300",
               currentStatus === "Queued" && "bg-muted text-muted-foreground",
-              currentStatus === "Planning" && "bg-blue-500/20 text-blue-600 dark:text-blue-400",
-              currentStatus === "Generating" && "bg-purple-500/20 text-purple-600 dark:text-purple-400"
+              currentStatus === "Planning" && "bg-accent-soft text-primary",
+              currentStatus === "Generating" && "bg-accent-soft text-primary"
             )}
           >
             {currentStatus}
           </span>
           {isRefreshing && (
-            <div className="h-2 w-2 bg-blue-500 rounded-full animate-pulse" />
+            <div className="h-2 w-2 bg-primary rounded-full animate-pulse" />
           )}
         </div>
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -540,7 +540,7 @@ function ProgressView({
         {/* Spinner and current action */}
         <div className="text-center space-y-3">
           <div className="relative inline-block">
-            <Loader2 className="h-10 w-10 animate-spin text-blue-500" />
+            <Loader2 className="h-10 w-10 animate-spin text-primary" />
           </div>
           <p className="text-sm font-medium text-foreground">{currentText}</p>
         </div>
@@ -549,7 +549,7 @@ function ProgressView({
         <div className="space-y-2">
           <div className="h-1.5 bg-muted rounded-full overflow-hidden">
             <div
-              className="h-full bg-gradient-to-r from-blue-500 via-purple-500 to-blue-400 rounded-full transition-all duration-150 ease-out"
+              className="h-full bg-primary rounded-full transition-all duration-150 ease-out"
               style={{ width: `${Math.round(progress)}%` }}
             />
           </div>
@@ -562,12 +562,12 @@ function ProgressView({
 
       {/* Animated log output - fixed at bottom */}
       <div className="mt-auto pt-4">
-        <ScrollArea className="h-[100px] bg-muted/30 rounded-lg border border-border/50">
+        <ScrollArea className="h-[100px] bg-surface-sunken rounded-lg border border-border/50">
           <div className="p-3 space-y-1.5 font-mono text-[11px]">
             {/* Real logs if any */}
             {task.logs.length > 0 && task.logs.slice(-2).map((log, idx) => (
               <div key={`real-${idx}`} className="text-foreground/70 flex items-start gap-2">
-                <Check className="h-3 w-3 text-green-500 shrink-0 mt-0.5" />
+                <Check className="h-3 w-3 text-success shrink-0 mt-0.5" />
                 <span>{log}</span>
               </div>
             ))}
@@ -578,7 +578,7 @@ function ProgressView({
                 className="text-muted-foreground flex items-start gap-2 transition-opacity duration-300"
                 style={{ opacity: log.opacity }}
               >
-                <span className="text-blue-400 shrink-0">→</span>
+                <span className="text-primary/70 shrink-0">→</span>
                 <span>{log.text}</span>
               </div>
             ))}
@@ -602,15 +602,15 @@ function ErrorView({ task }: { task: CodexTask }) {
   return (
     <div className="h-full flex items-center justify-center p-8">
       <div className="text-center space-y-4 max-w-md">
-        <div className="w-12 h-12 rounded-full bg-red-500/10 flex items-center justify-center mx-auto">
-          <AlertCircle className="h-6 w-6 text-red-500" />
+        <div className="w-12 h-12 rounded-full bg-destructive/10 flex items-center justify-center mx-auto">
+          <AlertCircle className="h-6 w-6 text-destructive" />
         </div>
         <div>
           <p className="text-sm font-medium text-foreground mb-2">Task Failed</p>
-          <p className="text-sm text-red-600 dark:text-red-400">{task.error}</p>
+          <p className="text-sm text-destructive">{task.error}</p>
         </div>
         {task.logs.length > 0 && (
-          <div className="bg-muted/50 rounded-lg p-3 text-left max-h-[150px] overflow-auto">
+          <div className="bg-surface-sunken rounded-lg p-3 text-left max-h-[150px] overflow-auto">
             <div className="space-y-1 font-mono text-[11px]">
               {task.logs.map((log, idx) => (
                 <div key={idx} className="text-muted-foreground">
@@ -656,16 +656,16 @@ function FileListItem({
       <span className="text-xs font-mono truncate flex-1">{change.path}</span>
       <span
         className={cn(
-          "text-[9px] px-1 py-0.5 rounded shrink-0",
+          "text-[9px] uppercase tracking-[0.08em] font-medium px-1 py-0.5 rounded shrink-0",
           isNew
-            ? "bg-green-500/20 text-green-600 dark:text-green-400"
-            : "bg-amber-500/20 text-amber-600 dark:text-amber-400"
+            ? "bg-success/15 text-success"
+            : "bg-warning/15 text-warning-foreground dark:text-warning"
         )}
       >
         {isNew ? "NEW" : "MOD"}
       </span>
       {isApplied && (
-        <Check className="h-3 w-3 text-green-500 shrink-0" />
+        <Check className="h-3 w-3 text-success shrink-0" />
       )}
     </button>
   )
@@ -690,36 +690,36 @@ function DiffPreview({
   return (
     <div className="flex flex-col h-full">
       {/* Diff header */}
-      <div className="flex items-center gap-2 px-4 py-2 bg-muted/50 border-b border-border">
+      <div className="flex items-center gap-2 px-4 py-2 bg-surface-sunken border-b border-border/60">
         <FileCode className="h-3.5 w-3.5 text-muted-foreground" />
         <span className="text-xs font-mono flex-1">{change.path}</span>
         <span
           className={cn(
-            "text-[10px] px-1.5 py-0.5 rounded",
+            "text-[10px] uppercase tracking-[0.08em] font-medium px-1.5 py-0.5 rounded",
             isNew
-              ? "bg-green-500/20 text-green-600 dark:text-green-400"
-              : "bg-amber-500/20 text-amber-600 dark:text-amber-400"
+              ? "bg-success/15 text-success"
+              : "bg-warning/15 text-warning-foreground dark:text-warning"
           )}
         >
           {isNew ? "NEW FILE" : "MODIFIED"}
         </span>
         {isApplied && (
-          <span className="text-[10px] px-1.5 py-0.5 rounded bg-green-500/20 text-green-600 dark:text-green-400">
+          <span className="text-[10px] uppercase tracking-[0.08em] font-medium px-1.5 py-0.5 rounded bg-success/15 text-success">
             APPLIED
           </span>
         )}
       </div>
 
       {/* Diff content */}
-      <ScrollArea className="flex-1">
+      <ScrollArea className="flex-1 bg-surface-sunken">
         <pre className="p-4 text-xs font-mono leading-relaxed">
           {diffLines.map((line, idx) => (
             <div
               key={idx}
               className={cn(
                 "whitespace-pre",
-                line.type === "add" && "bg-green-500/10 text-green-700 dark:text-green-300",
-                line.type === "remove" && "bg-red-500/10 text-red-700 dark:text-red-300",
+                line.type === "add" && "bg-success/10 text-success",
+                line.type === "remove" && "bg-destructive/10 text-destructive",
                 line.type === "header" && "text-muted-foreground font-semibold"
               )}
             >

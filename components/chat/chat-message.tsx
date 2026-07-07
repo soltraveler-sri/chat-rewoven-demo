@@ -50,10 +50,10 @@ export function ChatMessageBubble({
     const { branchTitle } = message.contextMeta
 
     return (
-      <div className="flex w-full justify-center animate-chip-in">
-        <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/20">
-          <GitMerge className="h-3 w-3 text-emerald-600 dark:text-emerald-400" />
-          <span className="text-xs text-emerald-700 dark:text-emerald-300">
+      <div className="flex w-full justify-start animate-chip-in">
+        <div className="inline-flex items-center gap-2 rounded-md border-l-2 border-l-thread bg-success/10 px-3 py-1.5">
+          <GitMerge className="h-3.5 w-3.5 shrink-0 text-success" />
+          <span className="text-xs font-medium text-success">
             Branch &ldquo;{branchTitle}&rdquo; context added
           </span>
         </div>
@@ -73,8 +73,8 @@ export function ChatMessageBubble({
           className={cn(
             "relative max-w-[80%] rounded-2xl px-4 py-2.5",
             isUser
-              ? "bg-primary text-primary-foreground rounded-br-md"
-              : "bg-muted text-foreground rounded-bl-md"
+              ? "bg-accent-soft text-foreground rounded-br-md"
+              : "bg-card text-foreground rounded-bl-md border border-border/40 shadow-sm"
           )}
         >
           {isUser ? (
@@ -104,7 +104,7 @@ export function ChatMessageBubble({
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                    className="h-7 w-7 text-muted-foreground hover:text-primary"
                     onClick={handleBranch}
                   >
                     <GitBranch className="h-3.5 w-3.5" />

@@ -354,7 +354,7 @@ export function BranchOverlay({
             </button>
           </div>
           {branch.mergedIntoMain && (
-            <span className="text-[10px] bg-green-500/10 text-green-600 dark:text-green-400 px-1.5 py-0.5 rounded-full font-medium">
+            <span className="text-[10px] uppercase tracking-[0.08em] bg-success/15 text-success px-1.5 py-0.5 rounded-full font-medium">
               merged
             </span>
           )}

@@ -64,19 +64,19 @@ export function StorageWarningBanner({ className }: StorageWarningBannerProps) {
   return (
     <div
       className={cn(
-        "flex items-center gap-2 px-3 py-2 text-sm bg-amber-500/10 border border-amber-500/20 rounded-lg",
+        "flex items-center gap-2 px-3 py-2 text-sm bg-warning/10 border border-warning/20 rounded-lg",
         className
       )}
     >
-      <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0" />
-      <span className="flex-1 text-amber-700 dark:text-amber-300 text-xs">
+      <AlertTriangle className="h-4 w-4 text-warning shrink-0" />
+      <span className="flex-1 text-muted-foreground text-xs">
         {status.warning ||
           "Storage is running in demo-local mode. History may reset on refresh."}
         <a
           href="https://vercel.com/docs/storage/vercel-redis"
           target="_blank"
           rel="noopener noreferrer"
-          className="inline-flex items-center gap-1 ml-1 underline underline-offset-2 hover:text-amber-600 dark:hover:text-amber-200"
+          className="inline-flex items-center gap-1 ml-1 text-foreground/80 underline underline-offset-2 hover:text-foreground"
         >
           Configure Redis
           <ExternalLink className="h-3 w-3" />
@@ -84,7 +84,7 @@ export function StorageWarningBanner({ className }: StorageWarningBannerProps) {
       </span>
       <button
         onClick={() => setDismissed(true)}
-        className="p-0.5 rounded hover:bg-amber-500/20 text-amber-600 dark:text-amber-400"
+        className="p-0.5 rounded hover:bg-warning/15 text-muted-foreground hover:text-foreground"
         aria-label="Dismiss warning"
       >
         <X className="h-3.5 w-3.5" />

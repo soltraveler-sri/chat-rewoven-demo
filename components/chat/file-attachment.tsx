@@ -24,14 +24,14 @@ export function FileAttachmentChip({
     <div
       className={cn(
         "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg",
-        "bg-primary/10 border border-primary/20 text-sm",
+        "bg-secondary border border-border/50 text-sm",
         className
       )}
     >
       {isProcessing ? (
-        <Loader2 className="h-3.5 w-3.5 text-primary animate-spin" />
+        <Loader2 className="h-3.5 w-3.5 text-muted-foreground animate-spin" />
       ) : (
-        <FileText className="h-3.5 w-3.5 text-primary" />
+        <FileText className="h-3.5 w-3.5 text-muted-foreground" />
       )}
       <span className="text-xs font-medium truncate max-w-[180px]">
         {filename}
@@ -43,7 +43,7 @@ export function FileAttachmentChip({
         <Button
           variant="ghost"
           size="icon"
-          className="h-4 w-4 p-0 hover:bg-primary/20 rounded-full ml-0.5"
+          className="h-4 w-4 p-0 hover:bg-accent rounded-full ml-0.5"
           onClick={onRemove}
         >
           <X className="h-3 w-3" />

@@ -46,12 +46,12 @@ const STATUS_LABELS: Record<AssistantTaskStatus, string> = {
 
 const STATUS_STYLES: Record<AssistantTaskStatus, string> = {
   queued: "bg-muted text-muted-foreground",
-  interpreting: "bg-sky-500/10 text-sky-700 dark:text-sky-300",
-  searching: "bg-teal-500/10 text-teal-700 dark:text-teal-300",
-  reviewing: "bg-amber-500/10 text-amber-700 dark:text-amber-300",
-  generating: "bg-indigo-500/10 text-indigo-700 dark:text-indigo-300",
-  ready: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
-  failed: "bg-red-500/10 text-red-700 dark:text-red-300",
+  interpreting: "bg-accent-soft text-primary",
+  searching: "bg-accent-soft text-primary",
+  reviewing: "bg-accent-soft text-primary",
+  generating: "bg-accent-soft text-primary",
+  ready: "bg-success/15 text-success",
+  failed: "bg-destructive/15 text-destructive",
   no_results: "bg-muted text-muted-foreground",
 }
 
@@ -143,14 +143,14 @@ function WorkingState({
   compact?: boolean
 }) {
   return (
-    <div className="rounded-lg border border-teal-500/15 bg-teal-500/5 px-3 py-3">
+    <div className="rounded-lg border border-thread/25 bg-accent-soft/40 px-3 py-3">
       <div className="flex items-center gap-2 text-sm">
-        <Loader2 className="h-4 w-4 animate-spin text-teal-700 dark:text-teal-300" />
+        <Loader2 className="h-4 w-4 animate-spin text-primary" />
         <span className="font-medium">{WORKING_STEPS[stepIndex]}</span>
       </div>
-      <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-background">
+      <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-muted">
         <div
-          className="h-full rounded-full bg-teal-600 transition-all duration-500 dark:bg-teal-300"
+          className="h-full rounded-full bg-primary transition-all duration-500"
           style={{ width: `${((stepIndex + 1) / WORKING_STEPS.length) * 100}%` }}
         />
       </div>
@@ -159,12 +159,12 @@ function WorkingState({
           {WORKING_STEPS.map((step, index) => (
             <div key={step} className="flex min-w-0 items-center gap-1.5">
               {index < stepIndex ? (
-                <Check className="h-3 w-3 shrink-0 text-emerald-600 dark:text-emerald-400" />
+                <Check className="h-3 w-3 shrink-0 text-success" />
               ) : (
                 <span
                   className={cn(
                     "h-2 w-2 shrink-0 rounded-full",
-                    index === stepIndex ? "bg-teal-600 dark:bg-teal-300" : "bg-muted-foreground/25"
+                    index === stepIndex ? "bg-primary" : "bg-muted-foreground/25"
                   )}
                 />
               )}
@@ -241,12 +241,12 @@ function ArtifactPanel({ artifact }: { artifact: AssistantArtifact }) {
   const supportsDocx = artifact.kind === "markdown"
 
   return (
-    <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 px-3 py-3">
+    <div className="rounded-lg border border-border border-l-2 border-l-thread bg-surface-sunken px-3 py-3">
       <div className="flex items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-2">
-          <FileText className="h-4 w-4 shrink-0 text-emerald-700 dark:text-emerald-300" />
+          <FileText className="h-4 w-4 shrink-0 text-primary" />
           <div className="min-w-0">
-            <p className="truncate text-sm font-medium">{artifact.filename}</p>
+            <p className="truncate font-mono text-sm font-medium">{artifact.filename}</p>
             <p className="text-xs text-muted-foreground">
               {artifact.kind.toUpperCase()}
               {artifact.rowCount ? ` - ${artifact.rowCount} rows` : ""}
@@ -609,12 +609,12 @@ export function AssistantTaskCard({
 
   if (compact) {
     return (
-      <div className="overflow-hidden rounded-lg border border-teal-500/20 bg-card shadow-sm">
+      <div className="overflow-hidden rounded-lg border border-border border-l-2 border-l-thread bg-card shadow-[0_1px_2px_rgba(0,0,0,0.03)]">
         <div className="space-y-3 p-3">
           <div className="flex items-start justify-between gap-3">
             <div className="flex min-w-0 items-start gap-2.5">
-              <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-teal-500/10">
-                <Compass className="h-4 w-4 text-teal-700 dark:text-teal-300" />
+              <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-accent-soft">
+                <Compass className="h-4 w-4 text-primary" />
               </div>
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-1.5">
@@ -654,7 +654,7 @@ export function AssistantTaskCard({
           ) : (
             <>
               {task.status === "failed" && (
-                <div className="flex items-start gap-2 rounded-lg border border-red-500/20 bg-red-500/5 px-3 py-2 text-sm text-red-700 dark:text-red-300">
+                <div className="flex items-start gap-2 rounded-lg border border-destructive/20 bg-destructive/5 px-3 py-2 text-sm text-destructive">
                   <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
                   <span>{task.error || task.resultSummary}</span>
                 </div>
@@ -710,14 +710,14 @@ export function AssistantTaskCard({
   return (
     <div
       className={cn(
-        "mx-auto w-full max-w-5xl overflow-hidden rounded-xl border border-teal-500/20 bg-card shadow-sm dark:shadow-md dark:shadow-black/20"
+        "mx-auto w-full max-w-5xl overflow-hidden rounded-xl border border-border border-l-2 border-l-thread bg-card shadow-[0_2px_16px_rgba(0,0,0,0.04)] dark:shadow-md dark:shadow-black/20"
       )}
     >
-      <div className="border-b border-border/70 bg-teal-500/5 px-4 py-3">
+      <div className="border-b border-border/60 bg-accent-soft/40 px-4 py-3">
         <div className="flex items-start justify-between gap-3">
           <div className="flex min-w-0 items-start gap-3">
-            <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-teal-500/10">
-              <Compass className="h-4 w-4 text-teal-700 dark:text-teal-300" />
+            <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-accent-soft">
+              <Compass className="h-4 w-4 text-primary" />
             </div>
             <div className="min-w-0">
               <div className="flex items-center gap-2">
@@ -727,7 +727,7 @@ export function AssistantTaskCard({
                 </span>
                 <span
                   className={cn(
-                    "rounded-full px-2 py-0.5 text-[10px] font-medium",
+                    "rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.08em]",
                     STATUS_STYLES[task.status]
                   )}
                 >
@@ -768,7 +768,7 @@ export function AssistantTaskCard({
             </div>
 
             {task.status === "failed" && (
-              <div className="flex items-start gap-2 rounded-lg border border-red-500/20 bg-red-500/5 px-3 py-2 text-sm text-red-700 dark:text-red-300">
+              <div className="flex items-start gap-2 rounded-lg border border-destructive/20 bg-destructive/5 px-3 py-2 text-sm text-destructive">
                 <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
                 <span>{task.error || task.resultSummary}</span>
               </div>

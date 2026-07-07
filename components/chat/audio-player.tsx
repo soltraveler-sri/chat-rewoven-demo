@@ -350,7 +350,7 @@ export function AudioPlayer({
   return (
     <div
       className={cn(
-        "flex flex-col gap-2 p-3 rounded-xl bg-primary/5 border border-primary/10",
+        "flex flex-col gap-2 p-3 rounded-lg border-l-2 border-l-thread bg-surface-sunken",
         className
       )}
     >

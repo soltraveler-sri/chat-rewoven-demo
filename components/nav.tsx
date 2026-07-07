@@ -29,6 +29,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { cn } from "@/lib/utils"
+import { APP_BADGE, APP_NAME } from "@/lib/branding"
 
 const demoItems = [
   {
@@ -141,14 +142,17 @@ function StorageIndicator() {
     }
   }
 
-  const getColorClass = () => {
+  // Signal color drawn from the same-room token set (success sage / warning
+  // flax / destructive brick), carried only on the small icon so the pill
+  // itself stays quiet.
+  const getIconColorClass = () => {
     switch (storageInfo.type) {
       case "kv":
-        return "text-green-600 dark:text-green-400"
+        return "text-[hsl(var(--success))]"
       case "memory":
-        return "text-amber-600 dark:text-amber-400"
+        return "text-[hsl(var(--warning))]"
       case "error":
-        return "text-red-600 dark:text-red-400"
+        return "text-[hsl(var(--destructive))]"
     }
   }
 
@@ -156,13 +160,8 @@ function StorageIndicator() {
     <TooltipProvider delayDuration={300}>
       <Tooltip>
         <TooltipTrigger asChild>
-          <div
-            className={cn(
-              "flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-md border border-border/50 bg-muted/50",
-              getColorClass()
-            )}
-          >
-            {getIcon()}
+          <div className="flex items-center gap-1.5 rounded-md border border-border/60 bg-secondary/40 px-2 py-1 text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+            <span className={getIconColorClass()}>{getIcon()}</span>
             <span>{getLabel()}</span>
           </div>
         </TooltipTrigger>
@@ -193,13 +192,18 @@ export function Nav() {
   const currentDemo = demoItems.find((item) => pathname === item.href)
 
   return (
-    <nav className="flex items-center justify-between px-6 py-4 border-b border-border/50">
+    <nav className="flex items-center justify-between border-b border-border/40 px-6 py-4">
       <div className="flex items-center gap-1">
         <Link
           href="/"
-          className="text-lg font-semibold tracking-tight mr-6 hover:text-muted-foreground transition-colors"
+          className="mr-6 flex items-baseline gap-2 transition-colors hover:text-foreground"
         >
-          LLM Chat Demos
+          <span className="font-display text-xl font-medium text-foreground/90">
+            {APP_NAME}
+          </span>
+          <span className="text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+            {APP_BADGE}
+          </span>
         </Link>
         <div className="flex items-center gap-1">
           <DropdownMenu>

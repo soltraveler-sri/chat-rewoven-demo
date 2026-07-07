@@ -30,7 +30,7 @@ export function BranchChip({ branches, onOpenBranch }: BranchChipProps) {
           "transition-all duration-200 cursor-pointer",
           "border animate-chip-in",
           branch.mergedIntoMain
-            ? "bg-emerald-500/10 hover:bg-emerald-500/15 border-emerald-500/30 text-emerald-700 dark:text-emerald-300"
+            ? "bg-success/10 hover:bg-success/15 border-success/30 text-success"
             : "bg-muted/80 hover:bg-muted border-border/50"
         )}
       >
@@ -62,12 +62,12 @@ export function BranchChip({ branches, onOpenBranch }: BranchChipProps) {
             "transition-all duration-200 cursor-pointer",
             "border animate-chip-in",
             mergedCount > 0
-              ? "bg-emerald-500/10 hover:bg-emerald-500/15 border-emerald-500/30"
+              ? "bg-success/10 hover:bg-success/15 border-success/30"
               : "bg-muted/80 hover:bg-muted border-border/50"
           )}
         >
           {mergedCount > 0 ? (
-            <GitMerge className="h-3 w-3 text-emerald-600 dark:text-emerald-400" />
+            <GitMerge className="h-3 w-3 text-success" />
           ) : (
             <GitBranch className="h-3 w-3 text-muted-foreground" />
           )}
@@ -89,7 +89,7 @@ export function BranchChip({ branches, onOpenBranch }: BranchChipProps) {
             className="flex items-center gap-2 cursor-pointer"
           >
             {branch.mergedIntoMain ? (
-              <GitMerge className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+              <GitMerge className="h-3.5 w-3.5 text-success shrink-0" />
             ) : (
               <GitBranch className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
             )}
@@ -113,8 +113,8 @@ function ModeIndicator({ mode }: { mode: "fast" | "deep" }) {
       className={cn(
         "inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px]",
         mode === "fast"
-          ? "bg-amber-500/10 text-amber-600 dark:text-amber-400"
-          : "bg-blue-500/10 text-blue-600 dark:text-blue-400"
+          ? "bg-warning/15 text-warning"
+          : "bg-muted text-muted-foreground"
       )}
     >
       {mode === "fast" ? (
@@ -129,7 +129,7 @@ function ModeIndicator({ mode }: { mode: "fast" | "deep" }) {
 // Merged indicator
 function MergedIndicator() {
   return (
-    <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] bg-emerald-500/20 text-emerald-600 dark:text-emerald-400">
+    <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] bg-success/20 text-success">
       <Check className="h-2.5 w-2.5" />
     </span>
   )

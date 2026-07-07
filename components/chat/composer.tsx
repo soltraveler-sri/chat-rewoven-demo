@@ -53,7 +53,7 @@ export function Composer({
   return (
     <div
       className={cn(
-        "flex items-end gap-2 p-4 border-t border-border bg-card/50",
+        "flex items-end gap-2 p-4 border-t border-border/40 bg-card/60",
         className
       )}
     >
