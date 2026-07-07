@@ -74,6 +74,7 @@ function UnifiedDemoContent() {
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const messagesContainerRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const ttsStreamConfigRef = useRef<Map<string, { text: string; autoStart?: boolean }>>(new Map())
   const shouldAutoScroll = useRef(true)
 
   const {
@@ -98,6 +99,7 @@ function UnifiedDemoContent() {
     selfSetChatIdRef,
     setTasks,
     setFinderOptions: finder.setFinderOptions,
+    ttsStreamConfigRef,
   })
 
   const codex = useCodexTasks({
@@ -137,6 +139,7 @@ function UnifiedDemoContent() {
     enqueueChain,
     respondWithRetry,
     fetchThreads,
+    ttsStreamConfigRef,
   })
 
   const branches = useBranches({

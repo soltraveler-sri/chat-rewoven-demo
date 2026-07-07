@@ -41,6 +41,11 @@ export interface StoredChatMessage {
     branchTitle: string
     mergeType: "summary" | "full"
   }
+  /** Audio metadata for doc-read assistant messages */
+  audioMeta?: {
+    filename: string
+    docText?: string
+  }
 }
 
 /**

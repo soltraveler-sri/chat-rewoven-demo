@@ -15,6 +15,9 @@ import {
   persistMessage,
 } from "@/hooks/use-thread-persistence"
 
+const STORED_AUDIO_DOC_TEXT_MAX_CHARS = 60_000
+type TTSStreamConfig = { text: string; autoStart?: boolean }
+
 interface UseDocReadArgs {
   router: AppRouterInstance
   setState: Dispatch<SetStateAction<MainThreadState>>
@@ -25,6 +28,7 @@ interface UseDocReadArgs {
   enqueueChain: <T>(operation: () => Promise<T>) => Promise<T>
   respondWithRetry: (args: RespondWithRetryArgs) => Promise<RespondResponse>
   fetchThreads: () => Promise<void>
+  ttsStreamConfigRef: MutableRefObject<Map<string, TTSStreamConfig>>
 }
 
 export function useDocRead({
@@ -37,13 +41,13 @@ export function useDocRead({
   enqueueChain,
   respondWithRetry,
   fetchThreads,
+  ttsStreamConfigRef,
 }: UseDocReadArgs) {
   const [attachedFile, setAttachedFile] = useState<File | null>(null)
   const [extractedDocText, setExtractedDocText] = useState<string | null>(null)
   const [isUploadingDoc, setIsUploadingDoc] = useState(false)
   const [isGeneratingTTS, setIsGeneratingTTS] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const ttsStreamConfigRef = useRef<Map<string, { text: string }>>(new Map())
 
   const handleFileSelect = useCallback(async (file: File) => {
     const ext = file.name.toLowerCase().split(".").pop()
@@ -188,7 +192,10 @@ export function useDocRead({
           role: "assistant",
           text: `Here's the audio reading of "${filename}".`,
           createdAt: Date.now(),
-          audioMeta: { filename },
+          audioMeta: {
+            filename,
+            docText: extractedDocText.slice(0, STORED_AUDIO_DOC_TEXT_MAX_CHARS),
+          },
         }
 
         setState((prev) => ({
@@ -203,6 +210,7 @@ export function useDocRead({
             role: assistantMessage.role,
             text: assistantMessage.text,
             createdAt: assistantMessage.createdAt,
+            audioMeta: assistantMessage.audioMeta,
           })
         }
       } else {
@@ -318,6 +326,7 @@ export function useDocRead({
     setIsLoading,
     setState,
     storedThreadIdRef,
+    ttsStreamConfigRef,
   ])
 
   return {

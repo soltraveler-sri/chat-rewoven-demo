@@ -99,37 +99,46 @@ export function useCodexTasks({
       if (!contextInput) return Promise.resolve()
 
       return enqueueChain(async () => {
-        try {
-          const responseData = await respondWithRetry({
-            input: contextInput,
-            mode: "deep",
-            source: "ingestion",
-          })
+        const responseData = await respondWithRetry({
+          input: contextInput,
+          mode: "deep",
+          source: "ingestion",
+        })
 
-          lastResponseIdRef.current = responseData.id
-          setState((prev) => ({
-            ...prev,
+        lastResponseIdRef.current = responseData.id
+        setState((prev) => ({
+          ...prev,
+          lastResponseId: responseData.id,
+        }))
+
+        if (storedThreadIdRef.current) {
+          await updateStoredThread(storedThreadIdRef.current, {
             lastResponseId: responseData.id,
-          }))
+          })
+        }
 
-          if (storedThreadIdRef.current) {
-            await updateStoredThread(storedThreadIdRef.current, {
-              lastResponseId: responseData.id,
-            })
-          }
-
-          if (process.env.NODE_ENV === "development") {
-            console.log(
-              `[Unified:ingest] Task "${task.id.slice(0, 8)}..." ingested into chain`
-            )
-          }
-        } catch (error) {
-          console.error("Failed to ingest task context:", error)
+        if (process.env.NODE_ENV === "development") {
+          console.log(
+            `[Unified:ingest] Task "${task.id.slice(0, 8)}..." ingested into chain`
+          )
         }
       })
     },
     [enqueueChain, lastResponseIdRef, respondWithRetry, setState, storedThreadIdRef]
   )
+
+  const handleTaskIngestionFailure = useCallback((task: CodexTask, error: unknown) => {
+    console.error("Failed to ingest task context:", error)
+    ingestedTaskIdsRef.current.delete(task.id)
+    toast.error("Task context could not be added to the chat — retrying may help", {
+      action: {
+        label: "Retry",
+        onClick: () => {
+          setTasks((prev) => ({ ...prev }))
+        },
+      },
+    })
+  }, [setTasks])
 
   useEffect(() => {
     async function ingestCompletedTasks() {
@@ -153,7 +162,11 @@ export function useCodexTasks({
       try {
         for (const task of completedTasks) {
           ingestedTaskIdsRef.current.add(task.id)
-          await ingestTaskContext(task)
+          try {
+            await ingestTaskContext(task)
+          } catch (error) {
+            handleTaskIngestionFailure(task, error)
+          }
         }
       } finally {
         isIngestingRef.current = false
@@ -161,7 +174,7 @@ export function useCodexTasks({
     }
 
     ingestCompletedTasks()
-  }, [tasks, ingestTaskContext])
+  }, [tasks, ingestTaskContext, handleTaskIngestionFailure])
 
   const refreshTask = useCallback(async (taskId: string): Promise<CodexTask | null> => {
     try {
@@ -343,7 +356,11 @@ export function useCodexTasks({
         !ingestedTaskIdsRef.current.has(taskForIngestion.id)
       ) {
         ingestedTaskIdsRef.current.add(taskForIngestion.id)
-        await ingestTaskContext(taskForIngestion)
+        try {
+          await ingestTaskContext(taskForIngestion)
+        } catch (error) {
+          handleTaskIngestionFailure(taskForIngestion, error)
+        }
 
         if (storedThreadIdRef.current && taskForIngestion.title) {
           updateStoredThread(storedThreadIdRef.current, {
@@ -362,6 +379,7 @@ export function useCodexTasks({
     }
   }, [
     fetchThreads,
+    handleTaskIngestionFailure,
     ingestTaskContext,
     refreshTask,
     router,

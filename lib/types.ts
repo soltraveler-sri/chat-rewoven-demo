@@ -34,6 +34,8 @@ export interface ChatMessage {
     /** Voice used, when known — the server owns the default */
     voice?: string
     filename: string
+    /** Extracted document text used to regenerate TTS after thread reload */
+    docText?: string
   }
 }
 

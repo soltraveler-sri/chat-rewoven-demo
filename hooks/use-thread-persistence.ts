@@ -9,6 +9,8 @@ import type { StoredChatThread, StoredChatThreadMeta } from "@/lib/store/types"
 import type { MainThreadState } from "@/lib/types"
 import { generateId, type UnifiedMessage } from "@/lib/chat/unified"
 
+type TTSStreamConfig = { text: string; autoStart?: boolean }
+
 export async function createStoredThread(title?: string): Promise<string | null> {
   try {
     const res = await fetch("/api/chats", {
@@ -63,6 +65,7 @@ export async function persistMessage(
     taskId?: string
     isTaskCard?: boolean
     contextMeta?: { branchId: string; branchTitle: string; mergeType: "summary" | "full" }
+    audioMeta?: { filename: string; docText?: string }
   }
 ): Promise<boolean> {
   SessionChatCache.appendMessage(threadId, {
@@ -71,6 +74,10 @@ export async function persistMessage(
     text: message.text,
     createdAt: message.createdAt,
     responseId: message.responseId,
+    ...(message.taskId ? { taskId: message.taskId } : {}),
+    ...(message.isTaskCard ? { isTaskCard: message.isTaskCard } : {}),
+    ...(message.contextMeta ? { contextMeta: message.contextMeta } : {}),
+    ...(message.audioMeta ? { audioMeta: message.audioMeta } : {}),
   })
   try {
     const res = await fetch(`/api/chats/${threadId}/messages`, {
@@ -117,6 +124,7 @@ interface UseThreadPersistenceArgs {
   selfSetChatIdRef: MutableRefObject<string | null>
   setTasks: Dispatch<SetStateAction<Record<string, CodexTask>>>
   setFinderOptions: Dispatch<SetStateAction<FinderOption[]>>
+  ttsStreamConfigRef: MutableRefObject<Map<string, TTSStreamConfig>>
 }
 
 export function useThreadPersistence({
@@ -127,6 +135,7 @@ export function useThreadPersistence({
   selfSetChatIdRef,
   setTasks,
   setFinderOptions,
+  ttsStreamConfigRef,
 }: UseThreadPersistenceArgs) {
   const [threads, setThreads] = useState<StoredChatThreadMeta[]>([])
   const [isLoadingThreads, setIsLoadingThreads] = useState(true)
@@ -192,16 +201,27 @@ export function useThreadPersistence({
         return
       }
 
-      const loadedMessages: UnifiedMessage[] = thread.messages.map((m) => ({
-        localId: m.id,
-        role: m.role as "user" | "assistant" | "context",
-        text: m.text,
-        createdAt: m.createdAt,
-        responseId: m.responseId,
-        ...(m.taskId ? { taskId: m.taskId } : {}),
-        ...(m.isTaskCard ? { isTaskCard: m.isTaskCard } : {}),
-        ...(m.contextMeta ? { contextMeta: m.contextMeta } : {}),
-      }))
+      ttsStreamConfigRef.current.clear()
+      const loadedMessages: UnifiedMessage[] = thread.messages.map((m) => {
+        if (m.audioMeta?.docText) {
+          ttsStreamConfigRef.current.set(m.id, {
+            text: m.audioMeta.docText,
+            autoStart: false,
+          })
+        }
+
+        return {
+          localId: m.id,
+          role: m.role as "user" | "assistant" | "context",
+          text: m.text,
+          createdAt: m.createdAt,
+          responseId: m.responseId,
+          ...(m.taskId ? { taskId: m.taskId } : {}),
+          ...(m.isTaskCard ? { isTaskCard: m.isTaskCard } : {}),
+          ...(m.contextMeta ? { contextMeta: m.contextMeta } : {}),
+          ...(m.audioMeta ? { audioMeta: m.audioMeta } : {}),
+        }
+      })
 
       const taskCardMessages = loadedMessages.filter((m) => m.isTaskCard && m.taskId)
       for (const msg of taskCardMessages) {
@@ -237,6 +257,7 @@ export function useThreadPersistence({
     setState,
     setTasks,
     storedThreadIdRef,
+    ttsStreamConfigRef,
   ])
 
   return {

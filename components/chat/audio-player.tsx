@@ -9,6 +9,8 @@ export interface TTSStreamConfig {
   text: string
   /** Optional voice override; the server owns model/voice defaults */
   voice?: string
+  /** Whether streaming should begin immediately on mount */
+  autoStart?: boolean
 }
 
 interface AudioPlayerProps {
@@ -32,15 +34,17 @@ export function AudioPlayer({
   voice,
   className,
 }: AudioPlayerProps) {
+  const shouldAutoStartStream = streamConfig?.autoStart !== false
   const audioRef = useRef<HTMLAudioElement>(null)
   const [isPlaying, setIsPlaying] = useState(false)
   const [currentTime, setCurrentTime] = useState(0)
   const [duration, setDuration] = useState(0)
   const [speedIndex, setSpeedIndex] = useState(1) // Default 1x
-  const [isBuffering, setIsBuffering] = useState(!!streamConfig)
+  const [isBuffering, setIsBuffering] = useState(!!streamConfig && shouldAutoStartStream)
   const [streamComplete, setStreamComplete] = useState(!streamConfig)
   const [streamError, setStreamError] = useState<string | null>(null)
   const [bufferedTime, setBufferedTime] = useState(0)
+  const [hasStreamStarted, setHasStreamStarted] = useState(!!streamConfig && shouldAutoStartStream)
   const progressRef = useRef<HTMLDivElement>(null)
   const abortRef = useRef<AbortController | null>(null)
   const mediaSourceUrlRef = useRef<string | null>(null)
@@ -92,10 +96,12 @@ export function AudioPlayer({
     }
   }, [audioUrl, isStreamMode])
 
-  // Streaming setup — runs once on mount
-  useEffect(() => {
+  const beginStream = useCallback(() => {
     if (!streamConfig || audioUrl || streamInitiatedRef.current) return
     streamInitiatedRef.current = true
+    setHasStreamStarted(true)
+    setIsBuffering(true)
+    setStreamError(null)
 
     const abortController = new AbortController()
     abortRef.current = abortController
@@ -113,15 +119,23 @@ export function AudioPlayer({
     } else {
       startFallbackStream(streamConfig, abortController.signal, t0)
     }
+  }, [audioUrl, streamConfig])
 
+  // Streaming setup — auto-starts only for fresh read-aloud messages.
+  useEffect(() => {
+    if (shouldAutoStartStream) {
+      beginStream()
+    }
+  }, [beginStream, shouldAutoStartStream])
+
+  useEffect(() => {
     return () => {
-      abortController.abort()
+      abortRef.current?.abort()
       if (mediaSourceUrlRef.current) {
         URL.revokeObjectURL(mediaSourceUrlRef.current)
         mediaSourceUrlRef.current = null
       }
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   async function startMediaSourceStream(
@@ -288,13 +302,18 @@ export function AudioPlayer({
     const audio = audioRef.current
     if (!audio) return
 
+    if (isStreamMode && !streamInitiatedRef.current) {
+      beginStream()
+      return
+    }
+
     if (isPlaying) {
       audio.pause()
     } else {
       audio.play()
     }
     setIsPlaying(!isPlaying)
-  }, [isPlaying])
+  }, [beginStream, isPlaying, isStreamMode])
 
   const cycleSpeed = useCallback(() => {
     const nextIndex = (speedIndex + 1) % SPEED_OPTIONS.length
@@ -347,7 +366,7 @@ export function AudioPlayer({
               {voice}
             </span>
           )}
-          {isStreamMode && !streamComplete && (
+          {isStreamMode && hasStreamStarted && !streamComplete && (
             <span className="flex items-center gap-1 text-primary">
               <Loader2 className="h-3 w-3 animate-spin" />
               <span className="text-[10px]">Streaming</span>
@@ -405,7 +424,7 @@ export function AudioPlayer({
             }
           >
             {/* Buffer indicator (visible during streaming) */}
-            {isStreamMode && !streamComplete && (
+            {isStreamMode && hasStreamStarted && !streamComplete && (
               <div
                 className="absolute h-full bg-primary/20 rounded-full transition-all"
                 style={{ width: `${bufferedProgress}%` }}

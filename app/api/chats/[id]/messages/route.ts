@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server"
 import { getChatStore } from "@/lib/store"
 import type { StoredChatMessage } from "@/lib/store"
 
+const STORED_AUDIO_DOC_TEXT_MAX_CHARS = 60_000
+
 /**
  * Helper to get demo_uid from cookies
  */
@@ -71,6 +73,21 @@ export async function POST(
       ...(body.taskId ? { taskId: body.taskId } : {}),
       ...(body.isTaskCard ? { isTaskCard: body.isTaskCard } : {}),
       ...(body.contextMeta ? { contextMeta: body.contextMeta } : {}),
+      ...(body.audioMeta?.filename
+        ? {
+            audioMeta: {
+              filename: body.audioMeta.filename,
+              ...(body.audioMeta.docText
+                ? {
+                    docText: body.audioMeta.docText.slice(
+                      0,
+                      STORED_AUDIO_DOC_TEXT_MAX_CHARS
+                    ),
+                  }
+                : {}),
+            },
+          }
+        : {}),
     }
 
     await store.appendMessage(demoUid, id, message)
