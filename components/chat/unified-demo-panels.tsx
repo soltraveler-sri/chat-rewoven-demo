@@ -1,8 +1,18 @@
 "use client"
 
-import { FileAudio, Loader2, MessageSquare, Plus, Sparkles, Zap } from "lucide-react"
+import {
+  Code,
+  Loader2,
+  MessageSquare,
+  Paperclip,
+  Plus,
+  Search,
+  Sparkles,
+} from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import { APP_BADGE, APP_NAME, APP_TAGLINE } from "@/lib/branding"
+import { cn } from "@/lib/utils"
 import type { StoredChatThreadMeta } from "@/lib/store/types"
 
 function formatRelativeTime(timestamp: number): string {
@@ -35,9 +45,9 @@ export function UnifiedSidebar({
   onSelectThread: (threadId: string) => void
 }) {
   return (
-    <div className="w-64 border-r border-border flex flex-col bg-muted/30">
-      <div className="p-3 border-b border-border">
-        <Button onClick={onReset} className="w-full gap-2" variant="outline">
+    <div className="w-64 border-r border-border/40 flex flex-col bg-surface-sunken">
+      <div className="p-3">
+        <Button onClick={onReset} className="w-full gap-2" variant="secondary">
           <Plus className="h-4 w-4" />
           New Chat
         </Button>
@@ -59,17 +69,24 @@ export function UnifiedSidebar({
                 <button
                   key={thread.id}
                   onClick={() => onSelectThread(thread.id)}
-                  className={`w-full text-left p-2.5 rounded-lg transition-colors hover:bg-accent/50 ${
-                    isActive ? "bg-accent" : ""
-                  }`}
+                  className={cn(
+                    "w-full text-left p-2.5 rounded-lg transition-colors",
+                    "border-l-2 border-l-transparent hover:bg-accent/60",
+                    isActive && "bg-accent-soft border-l-thread"
+                  )}
                 >
                   <div className="flex items-start gap-2">
-                    <MessageSquare className="h-4 w-4 mt-0.5 shrink-0 text-muted-foreground" />
+                    <MessageSquare
+                      className={cn(
+                        "h-4 w-4 mt-0.5 shrink-0",
+                        isActive ? "text-primary" : "text-muted-foreground"
+                      )}
+                    />
                     <div className="flex-1 min-w-0">
                       <div className="text-sm font-medium truncate">
                         {thread.title || "New Chat"}
                       </div>
-                      <div className="text-xs text-muted-foreground">
+                      <div className="mt-0.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">
                         {formatRelativeTime(thread.updatedAt)}
                       </div>
                     </div>
@@ -84,45 +101,110 @@ export function UnifiedSidebar({
   )
 }
 
-export function UnifiedEmptyState() {
+const EXAMPLE_PROMPTS: {
+  prompt: string
+  tag: string
+  icon: typeof MessageSquare
+}[] = [
+  {
+    prompt: "Plan a 3-day Kyoto trip focused on food",
+    tag: "Chat",
+    icon: MessageSquare,
+  },
+  {
+    prompt: "@codex add a dark-mode toggle to the settings page",
+    tag: "Task",
+    icon: Code,
+  },
+  {
+    prompt: "@assistant find unfinished work from this week",
+    tag: "Assistant",
+    icon: Sparkles,
+  },
+  {
+    prompt: "/find that chat about the Kyoto trip",
+    tag: "Find",
+    icon: Search,
+  },
+]
+
+const FEATURE_LEGEND = [
+  "Branch",
+  "Merge",
+  "Find",
+  "Codex",
+  "Assistant",
+  "Read aloud",
+]
+
+export function UnifiedEmptyState({
+  onSelectPrompt,
+}: {
+  onSelectPrompt?: (prompt: string) => void
+}) {
   return (
-    <div className="flex flex-col items-center justify-center h-full text-center p-8">
-      <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mb-4">
-        <Zap className="h-8 w-8 text-primary" />
-      </div>
-      <h3 className="text-lg font-medium mb-2">Unified Chat</h3>
-      <p className="text-sm text-muted-foreground max-w-sm mb-4">
-        All features in one place. Chat, branch, run Codex tasks, or find past
-        conversations.
-      </p>
-      <div className="text-xs text-muted-foreground/70 max-w-sm p-3 bg-muted rounded-lg space-y-2">
-        <p>
-          <strong>Features:</strong>
+    <div className="flex h-full flex-col items-center justify-center px-6 py-10">
+      <div className="w-full max-w-xl">
+        {/* Wordmark — the front door */}
+        <div className="flex items-baseline gap-2.5">
+          <h1 className="font-display text-4xl font-medium text-foreground">
+            {APP_NAME}
+          </h1>
+          <span className="rounded-full bg-accent-soft px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-primary">
+            {APP_BADGE}
+          </span>
+        </div>
+        <p className="mt-3 max-w-md text-sm leading-relaxed text-muted-foreground">
+          {APP_TAGLINE}
         </p>
-        <p>
-          <code className="bg-background px-1 rounded">@assistant</code> &mdash;
-          Work across chats and recover unfinished work
+
+        {/* Try one of these */}
+        <p className="mt-8 mb-3 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/70">
+          Try one of these
         </p>
-        <p>
-          <code className="bg-background px-1 rounded">@codex</code> &mdash;
-          Generate code with task cards
-        </p>
-        <p>
-          <code className="bg-background px-1 rounded">/find</code> &mdash;
-          Search past conversations
-        </p>
-        <p>
-          <span className="inline-flex items-center gap-1">
-            <Sparkles className="h-3 w-3" /> Branch
-          </span>{" "}
-          &mdash; Click branch on any assistant message
-        </p>
-        <p>
-          <span className="inline-flex items-center gap-1">
-            <FileAudio className="h-3 w-3" /> Doc Read
-          </span>{" "}
-          &mdash; Attach a PDF/DOCX and ask to read it aloud
-        </p>
+        <div className="grid gap-2">
+          {EXAMPLE_PROMPTS.map(({ prompt, tag, icon: Icon }) => (
+            <button
+              key={prompt}
+              type="button"
+              onClick={() => onSelectPrompt?.(prompt)}
+              className={cn(
+                "group flex w-full items-center gap-3 rounded-xl px-3.5 py-3 text-left",
+                "border border-border/50 bg-card transition-colors",
+                "hover:border-thread/40 hover:bg-accent-soft/40",
+                "focus:outline-none focus:ring-2 focus:ring-ring/40"
+              )}
+            >
+              <Icon className="h-4 w-4 shrink-0 text-muted-foreground transition-colors group-hover:text-primary" />
+              <span className="flex-1 text-sm text-foreground">{prompt}</span>
+              <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/60">
+                {tag}
+              </span>
+            </button>
+          ))}
+        </div>
+
+        {/* Doc-read hint (not a seedable prompt — needs a file) */}
+        <div className="mt-2 flex items-center gap-3 rounded-xl px-3.5 py-3 text-sm text-muted-foreground">
+          <Paperclip className="h-4 w-4 shrink-0 text-muted-foreground/70" />
+          <span>
+            Attach a PDF and say{" "}
+            <span className="text-foreground">&ldquo;read this to me&rdquo;</span>{" "}
+            for a narrated document.
+          </span>
+        </div>
+
+        {/* Feature legend — quiet tracked labels, not an info box */}
+        <div className="mt-8 flex flex-wrap items-center gap-x-4 gap-y-1.5">
+          {FEATURE_LEGEND.map((label) => (
+            <span
+              key={label}
+              className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/50"
+            >
+              {label}
+            </span>
+          ))}
+        </div>
       </div>
     </div>
   )

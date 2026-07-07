@@ -56,14 +56,14 @@ function getConfidenceDisplay(confidence: number): {
   if (confidence >= 0.85) {
     return {
       label: "High match",
-      className: "text-green-600 dark:text-green-400",
+      className: "text-success",
       icon: <CheckCircle2 className="h-3 w-3" />,
     }
   }
   if (confidence >= 0.6) {
     return {
       label: "Good match",
-      className: "text-blue-600 dark:text-blue-400",
+      className: "text-foreground/80",
       icon: <Circle className="h-3 w-3" />,
     }
   }
@@ -108,10 +108,10 @@ export function FinderOptionCard({
       onClick={onClick}
       disabled={disabled || isOpening}
       className={cn(
-        "w-full text-left p-4 rounded-xl border transition-all duration-200",
-        "bg-card hover:bg-accent/50 border-border",
-        "focus:outline-none focus:ring-2 focus:ring-primary/20",
-        isOpening && "bg-primary/5 border-primary/30",
+        "group w-full text-left p-4 rounded-lg transition-all duration-200",
+        "border-l-2 border-l-thread bg-card hover:bg-accent-soft/40",
+        "focus:outline-none focus:ring-2 focus:ring-ring/40",
+        isOpening && "bg-accent-soft/60",
         disabled && "opacity-50 cursor-not-allowed"
       )}
     >
@@ -169,8 +169,8 @@ export function FinderOptionCard({
           className={cn(
             "shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors",
             isOpening
-              ? "bg-primary/10 text-primary"
-              : "bg-primary text-primary-foreground hover:bg-primary/90"
+              ? "bg-accent-soft text-primary"
+              : "bg-secondary text-secondary-foreground group-hover:bg-accent-soft group-hover:text-primary"
           )}
         >
           {isOpening ? (

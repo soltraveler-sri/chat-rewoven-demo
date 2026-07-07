@@ -466,6 +466,18 @@ function UnifiedDemoContent() {
     toast.success("Prompt inserted")
   }
 
+  const handleSelectExamplePrompt = useCallback((prompt: string) => {
+    setInputValue(prompt)
+    requestAnimationFrame(() => {
+      const textarea = textareaRef.current
+      if (textarea) {
+        textarea.focus()
+        const end = textarea.value.length
+        textarea.setSelectionRange(end, end)
+      }
+    })
+  }, [])
+
   return (
     <TooltipProvider delayDuration={300}>
       <div className="flex h-full">
@@ -481,10 +493,10 @@ function UnifiedDemoContent() {
         <div className="flex-1 flex flex-col">
           <StorageWarningBanner className="m-2" />
 
-          <div className="flex items-center justify-between p-4 border-b border-border">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-border/40">
             <div className="flex items-center gap-2">
-              <Zap className="h-5 w-5 text-primary" />
-              <span className="font-medium">Unified Chat</span>
+              <Zap className="h-4 w-4 text-muted-foreground" />
+              <span className="text-sm font-medium text-muted-foreground">Unified Chat</span>
             </div>
             <AssistantLauncher
               onRunTask={assistant.runAssistantTask}
@@ -500,9 +512,9 @@ function UnifiedDemoContent() {
             className="flex-1 overflow-y-auto"
           >
             {!hasMessages && !isLoading && !hasFinderResults && !finder.finderPending ? (
-              <UnifiedEmptyState />
+              <UnifiedEmptyState onSelectPrompt={handleSelectExamplePrompt} />
             ) : (
-              <div className="p-4 space-y-4">
+              <div className="mx-auto w-full max-w-3xl px-4 py-6 space-y-4">
                 {messages.map((message) => {
                   if (message.isAssistantTaskCard && message.assistantTaskId) {
                     const task = assistant.assistantTasks[message.assistantTaskId]
@@ -550,7 +562,7 @@ function UnifiedDemoContent() {
 
                 {finder.finderPending && (
                   <div className="flex items-start">
-                    <div className="bg-muted rounded-2xl rounded-bl-md px-4 py-3">
+                    <div className="bg-card border border-border/40 shadow-sm rounded-2xl rounded-bl-md px-4 py-3">
                       <div className="flex items-center gap-2">
                         <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
                         <span className="text-sm text-muted-foreground">Searching...</span>
@@ -588,9 +600,9 @@ function UnifiedDemoContent() {
             )}
           </div>
 
-          <div className="border-t border-border bg-card/50">
+          <div className="border-t border-border/40 bg-card/60">
             {docRead.attachedFile && (
-              <div className="px-4 pt-3 pb-0">
+              <div className="mx-auto w-full max-w-3xl px-4 pt-3 pb-0">
                 <FileAttachmentChip
                   filename={docRead.attachedFile.name}
                   isProcessing={docRead.isUploadingDoc}
@@ -600,15 +612,15 @@ function UnifiedDemoContent() {
             )}
 
             {docRead.isGeneratingTTS && (
-              <div className="px-4 pt-3 pb-0">
-                <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-primary/10 border border-primary/20 text-sm">
+              <div className="mx-auto w-full max-w-3xl px-4 pt-3 pb-0">
+                <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-accent-soft border-l-2 border-l-thread text-sm">
                   <Loader2 className="h-3.5 w-3.5 text-primary animate-spin" />
                   <span className="text-xs text-primary font-medium">Generating audio...</span>
                 </div>
               </div>
             )}
 
-            <div className="flex items-end gap-2 p-4">
+            <div className="mx-auto flex w-full max-w-3xl items-end gap-2 p-4">
               <input
                 ref={docRead.fileInputRef}
                 type="file"

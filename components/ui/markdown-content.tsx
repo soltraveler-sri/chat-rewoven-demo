@@ -64,7 +64,7 @@ export function MarkdownContent({ content, className, isUser = false }: Markdown
                     "px-1 py-0.5 rounded text-[0.8em] font-mono",
                     isUser
                       ? "bg-primary-foreground/20 text-primary-foreground"
-                      : "bg-background/60 text-foreground border border-border/50"
+                      : "bg-surface-sunken text-foreground border border-border/40"
                   )}
                   {...rest}
                 >
@@ -87,7 +87,7 @@ export function MarkdownContent({ content, className, isUser = false }: Markdown
                   "my-2 p-3 rounded-lg text-xs font-mono overflow-x-auto",
                   isUser
                     ? "bg-primary-foreground/15 text-primary-foreground"
-                    : "bg-background/70 text-foreground border border-border/50"
+                    : "bg-surface-sunken text-foreground border border-border/40"
                 )}
               >
                 {children}
