@@ -6,14 +6,13 @@ The unified chat at `/` is the primary way to experience all five ideas together
 
 ## Unified chat (`/`)
 
-The unified chat combines every feature below in one thread. First-time visitors see a set of example prompts to start from:
+The unified chat combines every feature below in one thread. First-time visitors get three things automatically:
 
-- "Plan a 3-day Kyoto trip focused on food" (chat)
-- "@codex add a dark-mode toggle to the settings page" (Codex task)
-- "@assistant find unfinished work from this week" (Assistant)
-- "/find that chat about the Kyoto trip" (retrieval)
+- **Four seeded sample chats** (asyncio debugging, the JWST, bond yields, a Portugal trip) so history, `/find`, and the Assistant have material immediately. Delete them and they stay deleted.
+- **Example prompt cards** that run themselves when clicked — branching first, then a Codex task, an Assistant request, and a `/find` query — plus a one-click "use our sample document" action for the read-aloud flow.
+- **A `Threads · 0/5` pill** in the header: a quiet progress rail listing five stageable moments, each marked woven when you actually complete the real feature. It's fully hideable and never blocks anything.
 
-plus a hint for document reading ("Attach a PDF and say 'read this to me' for a narrated document"). Replies stream token-by-token via server-sent events.
+Replies stream token-by-token via server-sent events.
 
 ### 1. Branch, isolate, and merge
 
