@@ -224,6 +224,19 @@ body {
   animation: chip-in 0.25s ease-out forwards;
 }
 
+@keyframes thread-pill-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 hsl(var(--thread) / 0);
+  }
+  40% {
+    box-shadow: 0 0 0 5px hsl(var(--thread) / 0.16);
+  }
+}
+
+.animate-thread-pill-pulse {
+  animation: thread-pill-pulse 1.1s ease-out 2;
+}
+
 /* Shimmer for progress surfaces */
 @keyframes shimmer {
   0% {

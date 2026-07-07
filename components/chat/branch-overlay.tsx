@@ -18,12 +18,14 @@ import {
   Sheet,
   SheetContent,
   SheetHeader,
+  SheetTitle,
   SheetDescription,
 } from "@/components/ui/sheet"
 import {
   Dialog,
   DialogContent,
   DialogHeader,
+  DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog"
 import {
@@ -519,6 +521,7 @@ export function BranchOverlay({
           className="w-full sm:max-w-md flex flex-col p-0 gap-0"
         >
           <SheetHeader className="px-4 py-3 border-b border-border shrink-0">
+            <SheetTitle className="sr-only">Branch side thread</SheetTitle>
             {headerContent}
             <SheetDescription asChild>{descriptionContent}</SheetDescription>
           </SheetHeader>
@@ -539,6 +542,7 @@ export function BranchOverlay({
         className="w-full max-w-[900px] h-[80vh] flex flex-col p-0 gap-0"
       >
         <DialogHeader className="px-4 py-3 border-b border-border shrink-0">
+          <DialogTitle className="sr-only">Branch side thread</DialogTitle>
           {headerContent}
           <DialogDescription asChild>{descriptionContent}</DialogDescription>
         </DialogHeader>
@@ -569,8 +573,8 @@ function BranchMessage({ message }: { message: ChatMessage }) {
         className={cn(
           "relative max-w-[85%] rounded-2xl px-3 py-2",
           isUser
-            ? "bg-primary text-primary-foreground rounded-br-md"
-            : "bg-muted text-foreground rounded-bl-md"
+            ? "bg-accent-soft text-foreground rounded-br-md"
+            : "bg-card text-foreground rounded-bl-md border border-border/40 shadow-sm"
         )}
       >
         {isUser ? (

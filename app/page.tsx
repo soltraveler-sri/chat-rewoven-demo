@@ -12,9 +12,11 @@ import {
 import { toast } from "sonner"
 import { AssistantLauncher, AssistantTaskCard } from "@/components/assistant"
 import {
+  BranchNudge,
   BranchOverlay,
   ChatMessageBubble,
   FileAttachmentChip,
+  LooseThreadsRail,
   TypingIndicator,
 } from "@/components/chat"
 import {
@@ -41,6 +43,8 @@ import {
   useThreadPersistence,
 } from "@/hooks/use-thread-persistence"
 import type { CodexTask } from "@/lib/codex/types"
+import { seedLooseThreadsIfNeeded } from "@/lib/onboarding/seeds"
+import type { StoredChatThreadMeta } from "@/lib/store/types"
 import {
   extractFindQuery,
   generateId,
@@ -50,6 +54,15 @@ import {
   type UnifiedMessage,
 } from "@/lib/chat/unified"
 import type { BranchThread, MainThreadState } from "@/lib/types"
+
+const BRANCH_STARTER_PROMPT = "Plan a 3-day Kyoto trip focused on food"
+const CODEX_STARTER_PROMPT = "@codex add a dark-mode toggle to the settings page"
+const ASSISTANT_STARTER_PROMPT = "@assistant what did I leave unfinished this week?"
+const FIND_STARTER_PROMPT = "/find the chat about the telescope"
+const FIND_PREREQ_NOTICE =
+  "You'll need a few chats in history first — have a couple of conversations, then try /find."
+const BRANCH_NUDGE_STORAGE_KEY = "cr:nudge:branch"
+const SAMPLE_DOCUMENT_PATH = "/samples/a-short-history-of-weaving.pdf"
 
 function UnifiedDemoContent() {
   const router = useRouter()
@@ -68,6 +81,10 @@ function UnifiedDemoContent() {
   >({})
   const [activeBranchId, setActiveBranchId] = useState<string | null>(null)
   const [tasks, setTasks] = useState<Record<string, CodexTask>>({})
+  const [branchNudgeTargetLocalId, setBranchNudgeTargetLocalId] = useState<string | null>(null)
+  const [branchNudgeDismissed, setBranchNudgeDismissed] = useState(false)
+  const [prereqNotice, setPrereqNotice] = useState<string | null>(null)
+  const [sampleDocPendingSubmit, setSampleDocPendingSubmit] = useState(false)
 
   const storedThreadIdRef = useRef<string | null>(null)
   const selfSetChatIdRef = useRef<string | null>(null)
@@ -76,6 +93,10 @@ function UnifiedDemoContent() {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const ttsStreamConfigRef = useRef<Map<string, { text: string; autoStart?: boolean }>>(new Map())
   const shouldAutoScroll = useRef(true)
+  const branchNudgeArmedRef = useRef(false)
+  const prereqNoticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const submitTextRef = useRef<(text: string) => void | Promise<void>>(() => {})
+  const seedAttemptedRef = useRef(false)
 
   const {
     enqueueChain,
@@ -160,6 +181,63 @@ function UnifiedDemoContent() {
   const messages = state.messages as UnifiedMessage[]
   const hasMessages = state.messages.length > 0
   const hasFinderResults = finder.finderOptions.length > 0
+
+  useEffect(() => {
+    if (typeof window === "undefined") return
+    setBranchNudgeDismissed(
+      window.localStorage.getItem(BRANCH_NUDGE_STORAGE_KEY) === "1"
+    )
+  }, [])
+
+  useEffect(() => {
+    if (isLoadingThreads || typeof window === "undefined") return
+    if (window.localStorage.getItem("cr:seeded")) return
+    if (seedAttemptedRef.current) return
+    seedAttemptedRef.current = true
+
+    let cancelled = false
+
+    async function seedIfEmpty() {
+      try {
+        const response = await fetch("/api/chats")
+        if (!response.ok) return
+        const data = (await response.json()) as { threads?: unknown[] }
+        const serverThreads = Array.isArray(data.threads) ? data.threads : []
+        const seeded = await seedLooseThreadsIfNeeded(
+          serverThreads as StoredChatThreadMeta[]
+        )
+        if (seeded && !cancelled) {
+          await fetchThreads()
+        }
+      } catch (error) {
+        console.error("[Onboarding] Starter chat seeding failed:", error)
+      }
+    }
+
+    seedIfEmpty()
+
+    return () => {
+      cancelled = true
+    }
+  }, [fetchThreads, isLoadingThreads])
+
+  useEffect(() => {
+    if (!prereqNotice) return
+    if (prereqNoticeTimerRef.current) {
+      clearTimeout(prereqNoticeTimerRef.current)
+    }
+    prereqNoticeTimerRef.current = setTimeout(() => {
+      setPrereqNotice(null)
+      prereqNoticeTimerRef.current = null
+    }, 6000)
+
+    return () => {
+      if (prereqNoticeTimerRef.current) {
+        clearTimeout(prereqNoticeTimerRef.current)
+        prereqNoticeTimerRef.current = null
+      }
+    }
+  }, [prereqNotice])
 
   const handleScroll = useCallback(() => {
     const container = messagesContainerRef.current
@@ -280,6 +358,17 @@ function UnifiedDemoContent() {
           responseId: responseData.id,
         }
 
+        if (branchNudgeArmedRef.current) {
+          branchNudgeArmedRef.current = false
+          if (
+            typeof window !== "undefined" &&
+            window.localStorage.getItem(BRANCH_NUDGE_STORAGE_KEY) !== "1"
+          ) {
+            setBranchNudgeTargetLocalId(assistantMessage.localId)
+            setBranchNudgeDismissed(false)
+          }
+        }
+
         lastResponseIdRef.current = responseData.id
         setState((prev) => {
           const hasDraftMessage = prev.messages.some(
@@ -345,6 +434,7 @@ function UnifiedDemoContent() {
         }
       })
     } catch (error) {
+      branchNudgeArmedRef.current = false
       if (error instanceof Error && error.message === "CHAIN_RESET_RETRY_FAILED") {
         return
       }
@@ -364,8 +454,8 @@ function UnifiedDemoContent() {
     }
   }
 
-  const handleSend = async () => {
-    const userText = inputValue.trim()
+  async function handleSubmitText(text: string) {
+    const userText = text.trim()
     if (!userText || isLoading || isMerging || docRead.isGeneratingTTS) return
 
     setInputValue("")
@@ -398,6 +488,12 @@ function UnifiedDemoContent() {
     }
 
     await handleRegularChat(userText)
+  }
+
+  submitTextRef.current = handleSubmitText
+
+  const handleSend = async () => {
+    await handleSubmitText(inputValue)
   }
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -466,7 +562,27 @@ function UnifiedDemoContent() {
     toast.success("Prompt inserted")
   }
 
-  const handleSelectExamplePrompt = useCallback((prompt: string) => {
+  const showPrereqNotice = useCallback(() => {
+    setPrereqNotice(FIND_PREREQ_NOTICE)
+  }, [])
+
+  const dismissBranchNudge = useCallback(() => {
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(BRANCH_NUDGE_STORAGE_KEY, "1")
+    }
+    setBranchNudgeDismissed(true)
+    setBranchNudgeTargetLocalId(null)
+  }, [])
+
+  const handleBranchFromMessage = useCallback(
+    (localId: string, responseId: string) => {
+      dismissBranchNudge()
+      branches.handleBranch(localId, responseId)
+    },
+    [branches, dismissBranchNudge]
+  )
+
+  const stagePromptSubmit = useCallback((prompt: string) => {
     setInputValue(prompt)
     requestAnimationFrame(() => {
       const textarea = textareaRef.current
@@ -475,8 +591,128 @@ function UnifiedDemoContent() {
         const end = textarea.value.length
         textarea.setSelectionRange(end, end)
       }
+      setTimeout(() => {
+        submitTextRef.current(prompt)
+      }, 0)
     })
   }, [])
+
+  const stageBranchStarter = useCallback(() => {
+    branchNudgeArmedRef.current = true
+    stagePromptSubmit(BRANCH_STARTER_PROMPT)
+  }, [stagePromptSubmit])
+
+  const stageFindStarter = useCallback(() => {
+    if (threads.length === 0) {
+      showPrereqNotice()
+      return
+    }
+    stagePromptSubmit(FIND_STARTER_PROMPT)
+  }, [showPrereqNotice, stagePromptSubmit, threads.length])
+
+  const stageAssistantStarter = useCallback(() => {
+    if (threads.length === 0) {
+      assistant.handleLoadAssistantSampleWorkspace()
+    }
+    stagePromptSubmit(ASSISTANT_STARTER_PROMPT)
+  }, [assistant, stagePromptSubmit, threads.length])
+
+  const stageSampleDocument = useCallback(async () => {
+    try {
+      const response = await fetch(SAMPLE_DOCUMENT_PATH)
+      if (!response.ok) {
+        throw new Error("Sample document could not be loaded")
+      }
+      const blob = await response.blob()
+      const file = new File([blob], "a-short-history-of-weaving.pdf", {
+        type: "application/pdf",
+      })
+      setSampleDocPendingSubmit(true)
+      await docRead.handleFileSelect(file)
+    } catch (error) {
+      setSampleDocPendingSubmit(false)
+      const message =
+        error instanceof Error ? error.message : "Sample document could not be loaded"
+      toast.error(message)
+    }
+  }, [docRead])
+
+  const handleSelectExample = useCallback(
+    (action: "branch" | "codex" | "assistant" | "find") => {
+      if (action === "branch") {
+        stageBranchStarter()
+        return
+      }
+      if (action === "codex") {
+        stagePromptSubmit(CODEX_STARTER_PROMPT)
+        return
+      }
+      if (action === "assistant") {
+        stageAssistantStarter()
+        return
+      }
+      stageFindStarter()
+    },
+    [stageAssistantStarter, stageBranchStarter, stageFindStarter, stagePromptSubmit]
+  )
+
+  const handleRailStage = useCallback(
+    (action: "branch" | "find" | "codex" | "doc" | "assistant") => {
+      if (action === "branch") {
+        const latestAssistantReply = [...messages]
+          .reverse()
+          .find((message) => message.role === "assistant" && message.responseId)
+        if (
+          latestAssistantReply &&
+          typeof window !== "undefined" &&
+          window.localStorage.getItem(BRANCH_NUDGE_STORAGE_KEY) !== "1"
+        ) {
+          setBranchNudgeTargetLocalId(latestAssistantReply.localId)
+          setBranchNudgeDismissed(false)
+          return
+        }
+        stageBranchStarter()
+        return
+      }
+      if (action === "find") {
+        stageFindStarter()
+        return
+      }
+      if (action === "codex") {
+        stagePromptSubmit(CODEX_STARTER_PROMPT)
+        return
+      }
+      if (action === "doc") {
+        stageSampleDocument()
+        return
+      }
+      stageAssistantStarter()
+    },
+    [
+      messages,
+      stageAssistantStarter,
+      stageBranchStarter,
+      stageFindStarter,
+      stagePromptSubmit,
+      stageSampleDocument,
+    ]
+  )
+
+  useEffect(() => {
+    if (!sampleDocPendingSubmit) return
+    if (!docRead.attachedFile || !docRead.extractedDocText || docRead.isUploadingDoc) {
+      return
+    }
+
+    setSampleDocPendingSubmit(false)
+    stagePromptSubmit("read this to me")
+  }, [
+    docRead.attachedFile,
+    docRead.extractedDocText,
+    docRead.isUploadingDoc,
+    sampleDocPendingSubmit,
+    stagePromptSubmit,
+  ])
 
   return (
     <TooltipProvider delayDuration={300}>
@@ -498,12 +734,19 @@ function UnifiedDemoContent() {
               <Zap className="h-4 w-4 text-muted-foreground" />
               <span className="text-sm font-medium text-muted-foreground">Unified Chat</span>
             </div>
-            <AssistantLauncher
-              onRunTask={assistant.runAssistantTask}
-              onLoadSampleWorkspace={assistant.handleLoadAssistantSampleWorkspace}
-              onOpenChat={handleOpenAssistantChat}
-              onInsertPrompt={handleInsertAssistantPrompt}
-            />
+            <div className="flex items-center gap-2">
+              <LooseThreadsRail
+                onStage={handleRailStage}
+                prereqNotice={prereqNotice}
+                onDismissPrereqNotice={() => setPrereqNotice(null)}
+              />
+              <AssistantLauncher
+                onRunTask={assistant.runAssistantTask}
+                onLoadSampleWorkspace={assistant.handleLoadAssistantSampleWorkspace}
+                onOpenChat={handleOpenAssistantChat}
+                onInsertPrompt={handleInsertAssistantPrompt}
+              />
+            </div>
           </div>
 
           <div
@@ -512,7 +755,12 @@ function UnifiedDemoContent() {
             className="flex-1 overflow-y-auto"
           >
             {!hasMessages && !isLoading && !hasFinderResults && !finder.finderPending ? (
-              <UnifiedEmptyState onSelectPrompt={handleSelectExamplePrompt} />
+              <UnifiedEmptyState
+                onSelectExample={handleSelectExample}
+                onUseSampleDocument={stageSampleDocument}
+                prereqNotice={prereqNotice}
+                onDismissPrereqNotice={() => setPrereqNotice(null)}
+              />
             ) : (
               <div className="mx-auto w-full max-w-3xl px-4 py-6 space-y-4">
                 {messages.map((message) => {
@@ -549,14 +797,20 @@ function UnifiedDemoContent() {
                   }
 
                   return (
-                    <ChatMessageBubble
-                      key={message.localId}
-                      message={message}
-                      onBranch={branches.handleBranch}
-                      branches={branchesByParentLocalId[message.localId] || []}
-                      onOpenBranch={branches.handleOpenBranch}
-                      audioStreamConfig={docRead.ttsStreamConfigRef.current.get(message.localId)}
-                    />
+                    <div key={message.localId}>
+                      <ChatMessageBubble
+                        message={message}
+                        onBranch={handleBranchFromMessage}
+                        branches={branchesByParentLocalId[message.localId] || []}
+                        onOpenBranch={branches.handleOpenBranch}
+                        audioStreamConfig={docRead.ttsStreamConfigRef.current.get(message.localId)}
+                        onAudioPlaybackStart={docRead.handleAudioPlaybackStart}
+                      />
+                      {!branchNudgeDismissed &&
+                        branchNudgeTargetLocalId === message.localId && (
+                          <BranchNudge onDismiss={dismissBranchNudge} />
+                        )}
+                    </div>
                   )
                 })}
 

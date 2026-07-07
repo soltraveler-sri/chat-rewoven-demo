@@ -1,0 +1,4 @@
+# One JavaScript regular expression per line.
+# Matching console.error or pageerror messages are recorded but do not fail the run.
+caret-color
+net::ERR_FILE_NOT_FOUND

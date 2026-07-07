@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "ux": "node tests/ux/runner.cjs"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.15",
@@ -41,6 +42,7 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.1.1",
+    "playwright": "^1.57.0",
     "tailwindcss": "^4",
     "typescript": "^5"
   }

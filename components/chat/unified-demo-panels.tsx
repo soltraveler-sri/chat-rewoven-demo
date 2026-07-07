@@ -2,12 +2,15 @@
 
 import {
   Code,
+  FileAudio,
+  GitBranch,
   Loader2,
   MessageSquare,
   Paperclip,
   Plus,
   Search,
   Sparkles,
+  X,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -102,45 +105,52 @@ export function UnifiedSidebar({
 }
 
 const EXAMPLE_PROMPTS: {
+  label: string
   prompt: string
   tag: string
   icon: typeof MessageSquare
+  action: "branch" | "codex" | "assistant" | "find"
 }[] = [
   {
+    label: "Branch from a reply — explore without derailing the thread",
     prompt: "Plan a 3-day Kyoto trip focused on food",
-    tag: "Chat",
-    icon: MessageSquare,
+    tag: "Branch",
+    icon: GitBranch,
+    action: "branch",
   },
   {
+    label: "@codex add a dark-mode toggle to the settings page",
     prompt: "@codex add a dark-mode toggle to the settings page",
-    tag: "Task",
+    tag: "Codex",
     icon: Code,
+    action: "codex",
   },
   {
-    prompt: "@assistant find unfinished work from this week",
+    label: "@assistant what did I leave unfinished this week?",
+    prompt: "@assistant what did I leave unfinished this week?",
     tag: "Assistant",
     icon: Sparkles,
+    action: "assistant",
   },
   {
-    prompt: "/find that chat about the Kyoto trip",
+    label: "/find the chat about the telescope",
+    prompt: "/find the chat about the telescope",
     tag: "Find",
     icon: Search,
+    action: "find",
   },
-]
-
-const FEATURE_LEGEND = [
-  "Branch",
-  "Merge",
-  "Find",
-  "Codex",
-  "Assistant",
-  "Read aloud",
 ]
 
 export function UnifiedEmptyState({
-  onSelectPrompt,
+  onSelectExample,
+  onUseSampleDocument,
+  prereqNotice,
+  onDismissPrereqNotice,
 }: {
-  onSelectPrompt?: (prompt: string) => void
+  onSelectExample?: (action: "branch" | "codex" | "assistant" | "find") => void
+  onUseSampleDocument?: () => void
+  prereqNotice?: string | null
+  onDismissPrereqNotice?: () => void
 }) {
   return (
     <div className="flex h-full flex-col items-center justify-center px-6 py-10">
@@ -163,20 +173,20 @@ export function UnifiedEmptyState({
           Try one of these
         </p>
         <div className="grid gap-2">
-          {EXAMPLE_PROMPTS.map(({ prompt, tag, icon: Icon }) => (
+          {EXAMPLE_PROMPTS.map(({ prompt, label, tag, icon: Icon, action }) => (
             <button
               key={prompt}
               type="button"
-              onClick={() => onSelectPrompt?.(prompt)}
+              onClick={() => onSelectExample?.(action)}
               className={cn(
-                "group flex w-full items-center gap-3 rounded-xl px-3.5 py-3 text-left",
+                "group flex w-full items-center gap-3 rounded-lg px-3.5 py-3 text-left",
                 "border border-border/50 bg-card transition-colors",
                 "hover:border-thread/40 hover:bg-accent-soft/40",
                 "focus:outline-none focus:ring-2 focus:ring-ring/40"
               )}
             >
               <Icon className="h-4 w-4 shrink-0 text-muted-foreground transition-colors group-hover:text-primary" />
-              <span className="flex-1 text-sm text-foreground">{prompt}</span>
+              <span className="flex-1 text-sm text-foreground">{label}</span>
               <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/60">
                 {tag}
               </span>
@@ -184,26 +194,43 @@ export function UnifiedEmptyState({
           ))}
         </div>
 
+        {prereqNotice && (
+          <div className="mt-2 rounded-lg border border-border/50 border-l-2 border-l-thread bg-accent-soft/35 px-3.5 py-3">
+            <div className="flex items-start gap-2">
+              <p className="flex-1 text-sm leading-relaxed text-muted-foreground">
+                {prereqNotice}
+              </p>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 shrink-0"
+                onClick={onDismissPrereqNotice}
+                aria-label="Dismiss notice"
+              >
+                <X className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          </div>
+        )}
+
         {/* Doc-read hint (not a seedable prompt — needs a file) */}
-        <div className="mt-2 flex items-center gap-3 rounded-xl px-3.5 py-3 text-sm text-muted-foreground">
+        <div className="mt-2 flex items-center gap-3 rounded-lg px-3.5 py-3 text-sm text-muted-foreground">
           <Paperclip className="h-4 w-4 shrink-0 text-muted-foreground/70" />
           <span>
             Attach a PDF and say{" "}
             <span className="text-foreground">&ldquo;read this to me&rdquo;</span>{" "}
-            for a narrated document.
-          </span>
-        </div>
-
-        {/* Feature legend — quiet tracked labels, not an info box */}
-        <div className="mt-8 flex flex-wrap items-center gap-x-4 gap-y-1.5">
-          {FEATURE_LEGEND.map((label) => (
-            <span
-              key={label}
-              className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/50"
+            for a narrated document, or{" "}
+            <button
+              type="button"
+              onClick={onUseSampleDocument}
+              className="inline-flex items-center gap-1 text-primary underline-offset-4 hover:underline"
             >
-              {label}
-            </span>
-          ))}
+              <FileAudio className="h-3.5 w-3.5" />
+              use our sample document
+            </button>
+            .
+          </span>
         </div>
       </div>
     </div>
@@ -225,4 +252,3 @@ export function MergingOverlay() {
     </div>
   )
 }
-

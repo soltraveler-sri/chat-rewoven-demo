@@ -33,8 +33,9 @@ export async function POST(
     const { id } = await params
     const body = (await request.json()) as StoredChatMessage
 
-    // Validate required fields
-    if (!body.id || !body.role || !body.text) {
+    // Validate required fields. Note: text may legitimately be an empty
+    // string for task-card placeholder messages, so check type, not truthiness.
+    if (!body.id || !body.role || typeof body.text !== "string") {
       return NextResponse.json(
         { error: "Missing required fields: id, role, text" },
         { status: 400 }

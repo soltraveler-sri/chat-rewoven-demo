@@ -20,6 +20,7 @@ interface ChatMessageProps {
   onOpenBranch?: (branchId: string) => void
   /** Streaming TTS config — passed through to AudioPlayer for progressive playback */
   audioStreamConfig?: TTSStreamConfig
+  onAudioPlaybackStart?: () => void
 }
 
 export function ChatMessageBubble({
@@ -28,6 +29,7 @@ export function ChatMessageBubble({
   branches = [],
   onOpenBranch,
   audioStreamConfig,
+  onAudioPlaybackStart,
 }: ChatMessageProps) {
   const isUser = message.role === "user"
   const isAssistant = message.role === "assistant"
@@ -92,6 +94,7 @@ export function ChatMessageBubble({
               streamConfig={audioStreamConfig}
               filename={message.audioMeta?.filename}
               voice={message.audioMeta?.voice}
+              onPlaybackStart={onAudioPlaybackStart}
               className="mt-2"
             />
           )}
