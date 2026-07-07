@@ -2,74 +2,72 @@
 
 *A working concept for the next iteration of the ChatGPT interface — branching, history, code tasks, documents, and an assistant, woven into one chat.*
 
-This is a demo, not a product — built to make an argument about interface design, not to ship.
+A demo, not a product. The point is the argument it makes about interface design.
 
-![Chat, rewoven — the unified chat interface](docs/screenshots/chat-light.png)
-*The unified chat at `/`: a conversation where a side branch's context has been merged back in — and the next reply uses it.*
+![A side branch open next to the main conversation](docs/screenshots/branch-panel.png)
+*A branch: a side conversation that lives next to the thread it forked from — and can rejoin it.*
 
 ## Why this exists
 
-OpenAI's product has quietly become several products. Chat lives in its own app. Code generation lives in Codex. Custom behavior lives in GPTs. File analysis, voice, memory — each one arrived as its own surface, its own mental model, its own tab. That's a reasonable way to ship fast. It's a worse way to think, because every surface switch is a tax on the user: re-explain context, lose the thread, remember where you left something.
+ChatGPT began as one chat box. Since then, code generation became Codex, custom assistants became GPTs, and files, voice, and research each arrived with a mode or surface of their own. Every one of those launches made sense on its own terms. The sum, though, is a product where the user does the integration — you carry context from surface to surface in your head, or you paste it.
 
-This demo asks a narrower question: how much of that scattered space can be woven back into the chat itself, without the chat collapsing under its own cleverness? The answer isn't "everything belongs in the thread." A feature earns its place here only if being *in* the conversation is what makes it work — branching only matters because it can rejoin the thread it left; a code task only matters if the chat can talk about it afterward; a document only matters if you can ask about it instead of switching to a viewer. Five ideas passed that bar. Plenty of others didn't make the cut, and that filter is itself the point being made.
+The bet here is that most of that integration work belongs to the interface. I used one test for every feature: does it get *better* because it lives inside the conversation? Branching passes — a side thread is only worth having if it can rejoin the thread it left. Code tasks pass — the value is that the chat can talk about the code afterward. Plenty of things fail the test, and they aren't here. Five ideas passed. This repo is what they look like sharing one chat.
 
 ## Try it
 
 **Live demo:** [chat-rewoven.vercel.app](https://chat-rewoven.vercel.app)
 
-A 60-second tour, in order:
+The empty state offers example prompts that run themselves, a few sample chats are pre-seeded so history has something in it, and a quiet `Threads · 0/5` pill in the header keeps score of which of the five ideas you've tried. A tour, if you want one:
 
-1. Send a prompt from the empty-state suggestions and watch the reply stream in.
-2. Hover the reply and click **branch from here**. Tell the branch a secret. Close it with merge off — the main chat won't know it happened.
-3. Reopen the branch, turn merge on, close it again. Ask the main chat about the secret — now it knows, because the merged context survives in the conversation chain.
-4. Type `/find` followed by a few words about an earlier chat and open the result it surfaces.
-5. Type `@codex` followed by a small feature request. Watch the task card build a plan and a diff, then ask the chat a follow-up question about what it just generated.
-6. Attach a PDF and say "read this to me" — audio streams in as it's generated, with a player that stays in the thread.
-7. Type `@assistant find unfinished work from this week` and see it reason across your other chats.
+1. Click the first example prompt. When the reply finishes streaming, branch from it, tell the branch a secret, and close it with merge **on**.
+2. Ask the main chat about the secret. It knows — the merge is part of the conversation chain now, and it survives a reload.
+3. Type `/find the chat about the telescope`. Ranked results come back with a reason and a confidence label each; click one to open it.
+4. Run `@codex` with any small feature request, then ask a follow-up question about the code it produced. No pasting.
+5. Attach a PDF — or use the built-in sample — and say "read this to me."
+6. Ask `@assistant what did I leave unfinished this week?` and watch it work across your chats rather than inside one.
 
 ## The five ideas
 
-**Branching & context control.** Exploring a tangent in a live chat forces a choice between derailing the main thread or losing the tangent entirely. A branch lets you fork from any assistant reply, go explore, and decide afterward — not before — whether that exploration belongs in the main record, as a summary or as the full transcript. Merges are chained through the OpenAI Responses API's `previous_response_id`, so a merged branch is still there after a reload, not just in memory.
+**Branching & context control.** Exploring a tangent mid-conversation usually means derailing the thread or losing the tangent. A branch forks from any reply into a side thread on the same screen, and the isolation is real: the main chat doesn't know what happened in a branch until you merge it back — as a summary or in full — at which point the merged context becomes a durable part of the conversation, not a UI illusion. The decision to merge comes *after* the exploring, which is the only time you actually know whether it was worth keeping.
 
-**Persistent history that's actually retrievable.** History is only useful if you can find something in it later, and "search" usually means grep-ing titles you didn't write. Threads here title and summarize themselves, Smart Stacks groups them into categories automatically, and `/find` answers a natural-language question like "that chat about the Kyoto trip" with ranked results, each carrying a plain-language reason it matched and a confidence label (high / good / possible match).
+**History you can actually ask for.** Chat history is usually a graveyard with a title search. Threads here name and summarize themselves, get sorted into stacks automatically, and `/find` takes the question the way you'd ask a person — "the chat about the telescope" — returning ranked candidates, each with a stated reason and a confidence tier, so you can see *why* it thinks the top result is the one.
 
-**Codex-style task cards.** Asking an assistant to write code and getting back a wall of text in a chat bubble is a bad review experience. `@codex` in the chat spawns a task card with a plan, a per-file diff, and an apply-to-workspace step — code review, not code prose. Once a task completes, it's folded back into the chat's context automatically, so the next message can ask about the code it just wrote without re-pasting anything.
+![Ranked /find results with confidence tiers](docs/screenshots/find-results.png)
+*`/find` distinguishes the right chat from the near-misses, and says why.*
 
-**Documents & voice.** Attaching a file to a chat usually means the file becomes inert — a static object the model glances at once. Here a PDF or DOCX stays part of the conversation: ask questions about it, or say "read this to me" and it streams as narrated audio in a persistent in-chat player, rather than waiting on a full file to render before playback starts.
+**Codex-style task cards.** Code in a chat bubble is prose pretending to be a deliverable. `@codex` runs the task in a card instead — plan, per-file diffs, apply, PR — and when it completes, the work is folded into the conversation's context. The message after the card can ask "which files did you create and why?" and get a real answer, because the chat and the task share one memory.
 
-**A cross-chat Assistant.** Every other feature here works inside one conversation. This one deliberately doesn't: `@assistant` reasons across all of your chats at once — surfacing unfinished threads, synthesizing several conversations into a downloadable artifact, drafting a follow-up Codex prompt — with cited sources back to the specific chats it drew from, so its answers are checkable rather than asserted.
+![A codex task card with the follow-up conversation that knows about it](docs/screenshots/codex-card.png)
+*The card is the deliverable; the chat around it stays fluent in what was built.*
 
-|  |  |
-|---|---|
-| ![Landing page, light theme](docs/screenshots/home-light.png) | ![Unified chat, dark theme](docs/screenshots/chat-dark.png) |
-| Landing, light | Chat, dark |
+**Documents & voice.** An attached file shouldn't become an inert blob. A PDF or DOCX here stays conversational — ask it questions, or say "read this to me" and audio streams in as it's generated, through a player that stays pinned to that message in the thread (and is still there after a reload).
+
+**A cross-chat Assistant.** The other four ideas live inside one conversation; this one deliberately works across all of them. `@assistant` finds unfinished threads, synthesizes several chats into a downloadable artifact, or drafts the follow-up Codex prompt you were going to write — and it cites the specific chats it drew from, so the output is checkable instead of asserted.
 
 ## How it's built
 
-Next.js 16 (App Router) and TypeScript throughout. Every model call goes through the OpenAI Responses API — conversation chaining via `previous_response_id`, structured outputs for classification and Smart Stacks, and SSE token streaming for the chat itself. One model, `gpt-5.4-mini`, handles every task in the app; the differentiation is per-task reasoning effort (chat runs medium, background classification runs low), not a fleet of different models. Voice uses `gpt-4o-mini-tts`. Storage is Redis (Upstash or Vercel KV, whichever env pair is set) with an in-memory and browser-session fallback, so a missing database degrades the demo rather than breaking it. The hosted demo rate-limits per anonymous session.
+Next.js 16 (App Router), TypeScript throughout. Every model call goes through the OpenAI Responses API: conversation chaining via `previous_response_id`, structured outputs for classification and ranking, SSE streaming for the chat itself. One model — `gpt-5.4-mini` — runs the entire app, differentiated by per-task reasoning effort rather than a fleet of specialized models. Voice is `gpt-4o-mini-tts`. Storage is Redis (Upstash or Vercel KV) with an in-memory and browser-session fallback, so a missing database degrades the demo instead of breaking it. The hosted demo rate-limits per anonymous session. A Playwright harness under `tests/ux` drives every core flow against network fixtures, producing step-by-step screenshots — the UI gets reviewed the way users see it, not just type-checked.
 
-A few things are deliberately out of scope for a demo, not accidentally missing: Codex's "Create PR" is simulated end-to-end (no GitHub API call), identity is an anonymous cookie rather than an account system, and the Codex workspace is a mock file tree rather than a real repository. Each of those is a scope line drawn on purpose — the interface pattern is the thing being tested, not the backend it would eventually need.
+Some things are deliberately out of scope, not accidentally missing: "Create PR" is simulated end-to-end, identity is an anonymous cookie, and the Codex workspace is a mock file tree. The interface pattern is the thing under test — the backend it would eventually need is a known quantity.
 
 ## Run it locally
 
 ```bash
-git clone https://github.com/soltraveler-sri/Improved_LLM_Chat_Demo.git
-cd Improved_LLM_Chat_Demo
+git clone https://github.com/soltraveler-sri/chat-rewoven-demo.git
+cd chat-rewoven-demo
 npm install
 cp .env.example .env.local   # add OPENAI_API_KEY
 npm run dev
 ```
 
-Open `http://localhost:3000`. Storage and models both have working defaults — Redis is optional locally (the app runs on an in-memory store), and every model is optional to override (see `.env.example` for the full list).
-
-For a hosted deployment, add one Redis env pair (Upstash or Vercel KV naming both work) so history survives serverless cold starts — see `.env.example` for the exact variables.
+Open `http://localhost:3000`. One env var is required (`OPENAI_API_KEY`); everything else has working defaults. Redis is optional locally — the app runs on an in-memory store. For a hosted deployment, add one Redis env pair so history survives serverless cold starts; `.env.example` documents everything.
 
 ## Design
 
-The visual identity is called Interlace, and it isn't a decoration on top of the product — it's the same idea as the product, expressed as color and type. The app's own vocabulary is thread, branch, merge; the design system inherits that vocabulary rather than illustrating it. Two themes exist because both were designed with intent, not because dark mode is expected: a warm-linen light theme and a warm-charcoal dark theme (deliberately not the default blue-gray), with one terracotta accent reserved for context-event moments — a branch merging, a document attaching, a search result surfacing.
+The visual identity is called Interlace. It isn't decoration on top of the product — it's the product's own idea, expressed as color and type. The app's native vocabulary is thread, branch, merge; the design inherits that as principle rather than illustrating it as motif: a warm-linen light theme, a warm-charcoal dark theme, and a single terracotta accent that appears only at context events — a branch merging, a task completing, a result surfacing. Both themes were designed on purpose; neither is the afterthought.
 
 ---
 
-Standalone, single-feature versions of each idea live at `/demos/branches`, `/demos/history`, and `/demos/codex`, if you want to see one in isolation before seeing it woven in. Detailed walkthroughs for all of these, including exact UI copy, are in [`docs/demo-guide.md`](docs/demo-guide.md).
+Standalone, single-feature versions live at `/demos/branches`, `/demos/history`, and `/demos/codex`. Detailed walkthroughs are in [`docs/demo-guide.md`](docs/demo-guide.md).
 
 MIT licensed. See [`LICENSE`](LICENSE).
