@@ -95,12 +95,12 @@ export function AssistantPopup({
   }
 
   return (
-    <div className="absolute right-0 top-full z-40 mt-2 w-[420px] overflow-hidden rounded-xl border border-border bg-card shadow-xl dark:shadow-black/30">
-      <div className="border-b border-border bg-teal-500/5 px-4 py-3">
+    <div className="absolute right-0 top-full z-40 mt-2 w-[420px] overflow-hidden rounded-xl border border-border border-l-2 border-l-thread bg-card shadow-[0_2px_16px_rgba(0,0,0,0.04)] dark:shadow-black/30">
+      <div className="border-b border-border/60 bg-accent-soft/40 px-4 py-3">
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-start gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-md bg-teal-500/10">
-              <Compass className="h-4 w-4 text-teal-700 dark:text-teal-300" />
+            <div className="flex h-9 w-9 items-center justify-center rounded-md bg-accent-soft">
+              <Compass className="h-4 w-4 text-primary" />
             </div>
             <div>
               <h2 className="text-sm font-semibold">Assistant</h2>

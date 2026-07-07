@@ -853,12 +853,12 @@ function HistoryDemoContent() {
                                   message.role === "user"
                                     ? "bg-primary text-primary-foreground rounded-br-md"
                                     : message.role === "context"
-                                    ? "bg-amber-500/10 text-foreground border border-amber-500/20 rounded-bl-md"
+                                    ? "bg-warning/10 text-foreground border border-warning/20 rounded-bl-md"
                                     : "bg-card text-card-foreground border border-border rounded-bl-md"
                                 )}
                               >
                                 {message.role === "context" && (
-                                  <div className="text-[10px] text-amber-600 dark:text-amber-400 font-medium mb-1">
+                                  <div className="text-[10px] uppercase tracking-[0.08em] text-warning-foreground dark:text-warning font-medium mb-1">
                                     CONTEXT
                                   </div>
                                 )}

@@ -104,16 +104,18 @@ export const TASK_STATUS_LABELS: Record<CodexTaskStatus, string> = {
 }
 
 /**
- * Status colors for UI
+ * Status colors for UI — Interlace same-room signal tokens (quiet tinted washes).
+ * ready/pending = flax warning, applied/done = sage success, failed = brick
+ * destructive, running & PR = the dyed-thread accent family.
  */
 export const TASK_STATUS_COLORS: Record<CodexTaskStatus, string> = {
   queued: "bg-muted text-muted-foreground",
-  running: "bg-blue-500/20 text-blue-600 dark:text-blue-400",
-  draft_ready: "bg-amber-500/20 text-amber-600 dark:text-amber-400",
-  applied: "bg-green-500/20 text-green-600 dark:text-green-400",
-  pr_created: "bg-purple-500/20 text-purple-600 dark:text-purple-400",
-  done: "bg-green-500/20 text-green-600 dark:text-green-400",
-  failed: "bg-red-500/20 text-red-600 dark:text-red-400",
+  running: "bg-accent-soft text-primary",
+  draft_ready: "bg-warning/15 text-warning-foreground dark:text-warning",
+  applied: "bg-success/15 text-success",
+  pr_created: "bg-accent-soft text-primary",
+  done: "bg-success/15 text-success",
+  failed: "bg-destructive/15 text-destructive",
 }
 
 /**
