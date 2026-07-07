@@ -1,12 +1,43 @@
 import type { Metadata } from "next"
+import { Fraunces, Public_Sans, IBM_Plex_Mono } from "next/font/google"
 import { ThemeProvider } from "@/components/theme-provider"
 import { Nav } from "@/components/nav"
 import { Toaster } from "@/components/ui/sonner"
+import { APP_BADGE, APP_NAME, APP_TAGLINE } from "@/lib/branding"
 import "./globals.css"
 
+// Display — a characterful, composed serif for the wordmark, empty-state
+// title, and section headers. Fraunces reads warm and literate at UI-adjacent
+// sizes (this is a reading product); kept to 400–500 so display type feels
+// confident, not brutish.
+const fontDisplay = Fraunces({
+  subsets: ["latin"],
+  weight: ["400", "500", "600"],
+  style: ["normal", "italic"],
+  variable: "--ff-display",
+  display: "swap",
+})
+
+// UI / body — a quiet humanist sans. Public Sans is exceptionally legible at
+// small UI sizes and carries no house/template signature.
+const fontSans = Public_Sans({
+  subsets: ["latin"],
+  weight: ["400", "500", "600"],
+  variable: "--ff-sans",
+  display: "swap",
+})
+
+// Mono — warm, humanist monospace for code, diffs, and artifact filenames.
+const fontMono = IBM_Plex_Mono({
+  subsets: ["latin"],
+  weight: ["400", "500"],
+  variable: "--ff-mono",
+  display: "swap",
+})
+
 export const metadata: Metadata = {
-  title: "LLM Chat Demos",
-  description: "Product improvements to LLM chat interfaces",
+  title: `${APP_NAME} (${APP_BADGE})`,
+  description: APP_TAGLINE,
 }
 
 export default function RootLayout({
@@ -15,7 +46,11 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html
+      lang="en"
+      suppressHydrationWarning
+      className={`${fontDisplay.variable} ${fontSans.variable} ${fontMono.variable}`}
+    >
       <body className="font-sans antialiased">
         <ThemeProvider
           attribute="class"
@@ -23,17 +58,11 @@ export default function RootLayout({
           enableSystem
           disableTransitionOnChange
         >
-          <div className="app-background noise-overlay min-h-screen">
-            <div className="relative z-10 min-h-screen flex flex-col">
-              <div className="mx-auto w-full max-w-7xl px-4 py-4 flex-1 flex flex-col">
-                <div className="app-frame flex-1 flex flex-col overflow-hidden">
-                  <Nav />
-                  <main className="flex-1 overflow-auto">
-                    {children}
-                  </main>
-                </div>
-              </div>
-            </div>
+          {/* De-framed: one full-bleed surface. Nav + main fill the viewport;
+              main owns its own scroll so page-level layouts can size to h-full. */}
+          <div className="flex h-screen flex-col bg-background text-foreground">
+            <Nav />
+            <main className="min-h-0 flex-1 overflow-auto">{children}</main>
           </div>
           <Toaster />
         </ThemeProvider>

@@ -2,49 +2,105 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/*
+ * ── Interlace token system ──────────────────────────────────────────────
+ * One material family: undyed linen (neutrals) + a single dyed thread (accent).
+ *
+ * Light — "undyed linen": warm off-white ground, warm surface steps, warm
+ *   near-black ink. No pure #fff.
+ * Dark  — "loom at night": warm charcoal (hue ~30, NOT blue-gray zinc),
+ *   warm off-white ink. No pure #000.
+ *
+ * Values are `H S% L%` triples consumed via hsl(var(--x)). Existing shadcn
+ * token NAMES are preserved so every component keeps working; only VALUES
+ * are retuned. A few new tokens are added (documented inline).
+ *
+ * Note: shadcn's --accent / --accent-foreground are the neutral *hover
+ * surface* (ghost buttons, dropdown items) — NOT the brand accent. The brand
+ * accent (the dyed thread) is --primary and --ring.
+ */
+
 :root {
-  --background: 0 0% 100%;
-  --foreground: 240 10% 3.9%;
-  --card: 0 0% 100%;
-  --card-foreground: 240 10% 3.9%;
-  --popover: 0 0% 100%;
-  --popover-foreground: 240 10% 3.9%;
-  --primary: 240 5.9% 10%;
-  --primary-foreground: 0 0% 98%;
-  --secondary: 240 4.8% 95.9%;
-  --secondary-foreground: 240 5.9% 10%;
-  --muted: 240 4.8% 95.9%;
-  --muted-foreground: 240 3.8% 46.1%;
-  --accent: 240 4.8% 95.9%;
-  --accent-foreground: 240 5.9% 10%;
-  --destructive: 0 84.2% 60.2%;
-  --destructive-foreground: 0 0% 98%;
-  --border: 240 5.9% 90%;
-  --input: 240 5.9% 90%;
-  --ring: 240 5.9% 10%;
+  /* Neutrals — undyed linen (warm hue ~36–42) */
+  --background: 40 33% 97%; /* warm off-white paper */
+  --foreground: 30 12% 16%; /* warm near-black ink */
+
+  --card: 42 45% 98%; /* raised surface — a hair brighter than ground */
+  --card-foreground: 30 12% 16%;
+  --popover: 42 45% 98%;
+  --popover-foreground: 30 12% 16%;
+
+  --secondary: 38 24% 93%; /* tonal surface step (secondary buttons) */
+  --secondary-foreground: 30 12% 20%;
+
+  --muted: 36 22% 93%; /* muted surface (assistant bubble, quiet fills) */
+  --muted-foreground: 34 8% 44%;
+
+  --accent: 36 24% 92%; /* NEUTRAL hover surface (ghost/dropdown hover) */
+  --accent-foreground: 30 12% 20%;
+
+  /* The dyed thread — desaturated terracotta / madder. Brand accent. */
+  --primary: 12 46% 46%;
+  --primary-foreground: 40 40% 97%; /* warm near-white; AA ~4.8:1 on primary */
+
+  /* Signal colors — same-room desaturated versions (feature components
+     migrate off raw Tailwind emerald/amber/purple onto these later). */
+  --success: 145 25% 36%; /* sage — merge / applied */
+  --success-foreground: 40 40% 97%;
+  --warning: 40 68% 52%; /* flax amber — ready / pending (dark ink on top) */
+  --warning-foreground: 33 35% 16%;
+  --destructive: 6 54% 43%; /* muted brick — errors */
+  --destructive-foreground: 40 40% 97%;
+
+  --border: 36 18% 87%; /* subtle warm separator */
+  --input: 36 18% 85%;
+  --ring: 12 46% 46%; /* focus = the dyed thread */
+
+  /* New tokens (Interlace-specific) */
+  --surface-sunken: 38 20% 93%; /* recessed regions: sidebar tone-shift */
+  --thread: 12 46% 46%; /* the woven-in 2px accent edge on weft moments */
+  --accent-soft: 12 40% 92%; /* low-chroma terracotta wash (active context fills) */
+
   --radius: 0.625rem;
 }
 
 .dark {
-  --background: 240 10% 3.9%;
-  --foreground: 0 0% 98%;
-  --card: 240 10% 3.9%;
-  --card-foreground: 0 0% 98%;
-  --popover: 240 10% 3.9%;
-  --popover-foreground: 0 0% 98%;
-  --primary: 0 0% 98%;
-  --primary-foreground: 240 5.9% 10%;
-  --secondary: 240 3.7% 15.9%;
-  --secondary-foreground: 0 0% 98%;
-  --muted: 240 3.7% 15.9%;
-  --muted-foreground: 240 5% 64.9%;
-  --accent: 240 3.7% 15.9%;
-  --accent-foreground: 0 0% 98%;
-  --destructive: 0 62.8% 30.6%;
-  --destructive-foreground: 0 0% 98%;
-  --border: 240 3.7% 15.9%;
-  --input: 240 3.7% 15.9%;
-  --ring: 240 4.9% 83.9%;
+  /* Neutrals — loom at night (warm charcoal, hue ~30) */
+  --background: 30 8% 10%; /* warm charcoal ground */
+  --foreground: 40 20% 92%; /* warm off-white ink */
+
+  --card: 30 7% 13%; /* raised surface */
+  --card-foreground: 40 20% 92%;
+  --popover: 30 8% 12%;
+  --popover-foreground: 40 20% 92%;
+
+  --secondary: 30 6% 17%;
+  --secondary-foreground: 40 18% 90%;
+
+  --muted: 30 6% 16%;
+  --muted-foreground: 36 10% 62%;
+
+  --accent: 30 6% 18%; /* neutral hover surface */
+  --accent-foreground: 40 18% 90%;
+
+  /* Dyed thread lifts brighter against the dark ground */
+  --primary: 14 50% 62%;
+  --primary-foreground: 28 24% 12%; /* dark ink on light terracotta; AA ~5.6:1 */
+
+  --success: 145 30% 42%;
+  --success-foreground: 40 30% 96%;
+  --warning: 40 60% 55%;
+  --warning-foreground: 28 30% 12%;
+  --destructive: 8 52% 46%;
+  --destructive-foreground: 40 30% 96%;
+
+  --border: 34 8% 22%;
+  --input: 34 8% 24%;
+  --ring: 14 50% 62%;
+
+  --surface-sunken: 30 9% 8%;
+  --thread: 14 50% 62%;
+  --accent-soft: 14 35% 22%;
 }
 
 @theme inline {
@@ -64,12 +120,22 @@
   --color-accent-foreground: hsl(var(--accent-foreground));
   --color-destructive: hsl(var(--destructive));
   --color-destructive-foreground: hsl(var(--destructive-foreground));
+  --color-success: hsl(var(--success));
+  --color-success-foreground: hsl(var(--success-foreground));
+  --color-warning: hsl(var(--warning));
+  --color-warning-foreground: hsl(var(--warning-foreground));
   --color-border: hsl(var(--border));
   --color-input: hsl(var(--input));
   --color-ring: hsl(var(--ring));
+  --color-surface-sunken: hsl(var(--surface-sunken));
+  --color-thread: hsl(var(--thread));
+  --color-accent-soft: hsl(var(--accent-soft));
 
-  --font-sans: var(--font-sans, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif);
-  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  /* Type — three voices. next/font sets --ff-* on <html>; these theme tokens
+     generate the font-display / font-sans / font-mono utilities. */
+  --font-display: var(--ff-display), Georgia, "Times New Roman", serif;
+  --font-sans: var(--ff-sans), ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: var(--ff-mono), ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
 
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
@@ -84,57 +150,25 @@
 body {
   background: hsl(var(--background));
   color: hsl(var(--foreground));
-  font-family: var(--font-sans), system-ui, sans-serif;
+  font-family: var(--font-sans);
 }
 
-/* Subtle gradient background */
-.app-background {
-  background:
-    linear-gradient(135deg, hsl(var(--background)) 0%, hsl(240 4.8% 95.9%) 50%, hsl(var(--background)) 100%);
-  min-height: 100vh;
+/* The display voice is opt-in and used sparingly (wordmark, empty-state title,
+   section headers). Tailwind also generates a `font-display` utility from the
+   theme token above; this explicit class carries the reading-optimized
+   feature settings. */
+.font-display {
+  font-family: var(--font-display);
+  font-optical-sizing: auto;
+  font-feature-settings: "liga" 1, "calt" 1;
+  letter-spacing: -0.01em;
 }
 
-.dark .app-background {
-  background:
-    linear-gradient(135deg, hsl(var(--background)) 0%, hsl(240 3.7% 8%) 50%, hsl(var(--background)) 100%);
-}
+/* ── Motion ──────────────────────────────────────────────────────────────
+   State communication only, never decoration. Timings kept in the taste
+   register (~0.2s color/state, ~0.3–0.4s visibility/layout). */
 
-/* Noise texture overlay */
-.noise-overlay::before {
-  content: "";
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  opacity: 0.015;
-  pointer-events: none;
-  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
-  z-index: 1;
-}
-
-.dark .noise-overlay::before {
-  opacity: 0.03;
-}
-
-/* App frame styling */
-.app-frame {
-  background: hsl(var(--card));
-  border-radius: var(--radius-xl);
-  box-shadow:
-    0 0 0 1px hsl(var(--border) / 0.5),
-    0 4px 6px -1px rgb(0 0 0 / 0.05),
-    0 10px 15px -3px rgb(0 0 0 / 0.05);
-}
-
-.dark .app-frame {
-  box-shadow:
-    0 0 0 1px hsl(var(--border) / 0.5),
-    0 4px 6px -1px rgb(0 0 0 / 0.2),
-    0 10px 15px -3px rgb(0 0 0 / 0.2);
-}
-
-/* Chat message animations */
+/* Chat message entrance */
 @keyframes message-in {
   from {
     opacity: 0;
@@ -147,10 +181,10 @@ body {
 }
 
 .animate-message-in {
-  animation: message-in 0.2s ease-out forwards;
+  animation: message-in 0.24s ease-out forwards;
 }
 
-/* Typing indicator animation */
+/* Typing indicator */
 @keyframes typing-dot {
   0%, 60%, 100% {
     opacity: 0.3;
@@ -174,7 +208,7 @@ body {
   animation-delay: 0.3s;
 }
 
-/* Chip/badge fade + scale animation */
+/* Chip / badge fade + scale (context events woven in) */
 @keyframes chip-in {
   from {
     opacity: 0;
@@ -190,7 +224,7 @@ body {
   animation: chip-in 0.25s ease-out forwards;
 }
 
-/* Shimmer animation for progress bars */
+/* Shimmer for progress surfaces */
 @keyframes shimmer {
   0% {
     transform: translateX(-100%);
