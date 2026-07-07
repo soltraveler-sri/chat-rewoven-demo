@@ -41,8 +41,6 @@ const RefreshOutputSchema = z.object({
   chats: z.array(ChatCategorizationSchema),
 })
 
-type RefreshOutput = z.infer<typeof RefreshOutputSchema>
-
 /**
  * Build a compact transcript snippet from messages
  * Takes last N messages, truncates each message text

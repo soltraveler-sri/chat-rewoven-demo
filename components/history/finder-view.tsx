@@ -13,7 +13,6 @@ import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { cn } from "@/lib/utils"
-import { logAuditClient } from "@/lib/telemetry"
 import { FinderOptionCard, type FinderOption } from "./finder-option-card"
 import type { StoredChatThread } from "@/lib/store/types"
 import { CATEGORY_LABELS, type StoredChatCategory } from "@/lib/store/types"
@@ -21,6 +20,7 @@ import { SessionChatCache } from "@/lib/session-cache"
 
 /** Helper to build localThreads payload and log telemetry for /find */
 function getLocalThreadsForFind(query: string) {
+  void query
   const localThreads = SessionChatCache.listFullThreads().map((t) => ({
     id: t.id,
     title: t.title,
@@ -35,11 +35,6 @@ function getLocalThreadsForFind(query: string) {
   }))
   if (localThreads.length > 0) {
     SessionChatCache.trackEvent("findWithLocalThreads")
-    logAuditClient("5.9", "find_with_local_threads", {
-      query: query.slice(0, 50),
-      localThreadCount: localThreads.length,
-      localThreadIds: localThreads.map((t) => t.id.slice(0, 8)),
-    })
   }
   return localThreads
 }
@@ -171,7 +166,7 @@ export function FinderView({
   // Preview state - when user clicks "Open" we show transcript preview
   const [previewChatId, setPreviewChatId] = useState<string | null>(null)
   const [previewChatData, setPreviewChatData] = useState<StoredChatThread | null>(null)
-  const [isLoadingPreview, setIsLoadingPreview] = useState(false)
+  const [isLoadingPreview] = useState(false)
 
   // Opening state for transition effect
   const [openingChatId, setOpeningChatId] = useState<string | null>(null)
@@ -221,11 +216,6 @@ export function FinderView({
     setOpeningChatId(chatId)
 
     try {
-      logAuditClient("5.3", "finder_open_via_parent_navigation", {
-        chatId,
-        method: "onOpenChat",
-        isLocalPreview: false,
-      })
       // Use parent navigation for true URL-based resume (not local preview)
       onOpenChat(chatId, false)
       setFinderOptions([])

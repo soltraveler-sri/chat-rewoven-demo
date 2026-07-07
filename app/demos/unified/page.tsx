@@ -43,7 +43,6 @@ import type {
   AssistantTaskResult,
 } from "@/lib/assistant/types"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { logAuditClient, flushAuditTelemetry } from "@/lib/telemetry"
 import { SessionChatCache } from "@/lib/session-cache"
 import { createAssistantDemoThreads } from "@/lib/assistant/demo-seed"
 
@@ -680,21 +679,12 @@ function UnifiedDemoContent() {
 
         const payload = data as { code?: string; message?: string; error?: string }
         if (isChainBrokenResponse(res.status, payload)) {
-          logAuditClient("5.8", "chain_broken_detected", {
-            source,
-            status: res.status,
-            previousResponseId,
-            didRetry,
-            code: payload.code,
-          })
           resetChain()
           if (!didRetry) {
             const retryResult = await attempt(null, true)
-            logAuditClient("5.8", "chain_broken_retry_success", { source })
             toast.info("Chain reset; continuing")
             return retryResult
           }
-          logAuditClient("5.8", "chain_broken_retry_failed", { source })
           toast.error("Chain reset; please retry")
           throw new Error("CHAIN_RESET_RETRY_FAILED")
         }
@@ -770,27 +760,6 @@ function UnifiedDemoContent() {
     }
   }, [inputValue])
 
-  // Flush audit telemetry before unload and expose helpers on window
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      // Expose flush and get for console use during testing
-      // Usage: await window.__flushAuditTel__() or JSON.stringify(window.__AUDIT_TEL__, null, 2)
-      (window as unknown as Record<string, unknown>).__flushAuditTel__ = flushAuditTelemetry
-    }
-    const handleUnload = () => {
-      // Use sendBeacon for reliable delivery on unload
-      const entries = typeof window !== "undefined" ? window.__AUDIT_TEL__ || [] : []
-      if (entries.length > 0) {
-        navigator.sendBeacon(
-          "/api/telemetry",
-          JSON.stringify({ entries })
-        )
-      }
-    }
-    window.addEventListener("beforeunload", handleUnload)
-    return () => window.removeEventListener("beforeunload", handleUnload)
-  }, [])
-
   // Fetch workspace on mount
   useEffect(() => {
     async function fetchWorkspace() {
@@ -825,7 +794,6 @@ function UnifiedDemoContent() {
 
       // Try server first, then fall back to session cache
       let thread: StoredChatThread | null = null
-      let source = "server"
 
       try {
         const res = await fetch(`/api/chats/${urlChatId}`)
@@ -842,7 +810,6 @@ function UnifiedDemoContent() {
         const cached = SessionChatCache.getThread(urlChatId)
         if (cached) {
           thread = cached
-          source = "session_cache"
           SessionChatCache.trackEvent("threadCacheFallbacks")
         }
       }
@@ -850,9 +817,6 @@ function UnifiedDemoContent() {
       if (!thread) {
         // Both sources failed — silently skip (no toast)
         // The thread may appear later when Redis recovers
-        logAuditClient("5.9", "chat_load_both_failed", {
-          chatId: urlChatId.slice(0, 8),
-        })
         return
       }
 
@@ -877,22 +841,8 @@ function UnifiedDemoContent() {
             if (taskRes.ok) {
               const taskData = await taskRes.json()
               setTasks((prev) => ({ ...prev, [msg.taskId!]: taskData.task }))
-              logAuditClient("5.6", "task_card_restored_on_load", {
-                taskId: msg.taskId,
-                taskStatus: taskData.task?.status,
-                restored: true,
-              })
-            } else {
-              logAuditClient("5.6", "task_card_restore_failed", {
-                taskId: msg.taskId,
-                status: taskRes.status,
-              })
             }
           } catch {
-            logAuditClient("5.6", "task_card_restore_failed", {
-              taskId: msg.taskId,
-              error: "fetch_error",
-            })
           }
         }
       }
@@ -904,16 +854,6 @@ function UnifiedDemoContent() {
       lastResponseIdRef.current = thread.lastResponseId || null
 
       storedThreadIdRef.current = thread.id
-
-      logAuditClient("5.5", "chat_loaded_from_url", {
-        urlChatId,
-        threadId: thread.id,
-        source,
-        messageCount: loadedMessages.length,
-        lastResponseId: thread.lastResponseId || null,
-        hasTaskCards: taskCardMessages.length,
-        hasContextMeta: loadedMessages.filter((m) => m.contextMeta).length,
-      })
 
       // Clear finder state
       setFinderOptions([])
@@ -934,11 +874,6 @@ function UnifiedDemoContent() {
 
       return enqueueChain(async () => {
         try {
-          logAuditClient("5.8", "respond_with_retry_call", {
-            caller: "ingestTaskContext",
-            taskId: task.id,
-            previousResponseId: lastResponseIdRef.current,
-          })
           const responseData = await respondWithRetry({
             input: contextInput,
             mode: "deep",
@@ -1078,16 +1013,6 @@ function UnifiedDemoContent() {
 
       // Ingest context into chain immediately (like standalone branches)
       // This ensures merged context survives reload/reopen
-      const prevResponseId = lastResponseIdRef.current
-      logAuditClient("5.2", "branch_merge_chain_ingest_start", {
-        branchId: branch.id,
-        branchTitle: branch.title,
-        mergeMode,
-        previousResponseId: prevResponseId,
-        threadId: storedThreadIdRef.current,
-        messageCount: branch.messages.length,
-      })
-
       const responseData = await enqueueChain(async () => {
         return respondWithRetry({
           input: contextInput,
@@ -1109,14 +1034,6 @@ function UnifiedDemoContent() {
           lastResponseId: responseData.id,
         })
       }
-
-      logAuditClient("5.2", "branch_merge_chain_ingest_complete", {
-        branchId: branch.id,
-        previousResponseId: prevResponseId,
-        newResponseId: responseData.id,
-        threadId: storedThreadIdRef.current,
-        chainHeadPersisted: !!storedThreadIdRef.current,
-      })
 
       return {
         contextText: displayText,
@@ -1388,11 +1305,6 @@ function UnifiedDemoContent() {
         // Mark as self-set so loadChat effect skips re-fetching
         selfSetChatIdRef.current = id
         router.replace(`/demos/unified?chatId=${id}`, { scroll: false })
-        logAuditClient("5.5", "url_push_after_thread_create", {
-          threadId: id,
-          trigger: "codex_command",
-          urlAfter: `/demos/unified?chatId=${id}`,
-        })
         await persistMessage(id, {
           id: userMessage.localId,
           role: userMessage.role,
@@ -1463,19 +1375,13 @@ function UnifiedDemoContent() {
 
       // Persist the task card message so it survives reopen
       if (storedThreadIdRef.current) {
-        const taskPersistOk = await persistMessage(storedThreadIdRef.current, {
+        await persistMessage(storedThreadIdRef.current, {
           id: taskMessage.localId,
           role: taskMessage.role,
           text: taskMessage.text,
           createdAt: taskMessage.createdAt,
           taskId: task.id,
           isTaskCard: true,
-        })
-        logAuditClient("5.6", "task_card_persisted", {
-          threadId: storedThreadIdRef.current,
-          taskId: task.id,
-          messageId: taskMessage.localId,
-          persisted: taskPersistOk,
         })
       }
 
@@ -1497,21 +1403,7 @@ function UnifiedDemoContent() {
         !ingestedTaskIdsRef.current.has(taskForIngestion.id)
       ) {
         ingestedTaskIdsRef.current.add(taskForIngestion.id)
-        const ingestionStart = Date.now()
-        logAuditClient("5.1", "codex_ingestion_start", {
-          taskId: taskForIngestion.id,
-          threadId: storedThreadIdRef.current,
-          lastResponseIdBefore: lastResponseIdRef.current,
-          inputStillDisabled: true,
-        })
         await ingestTaskContext(taskForIngestion)
-        logAuditClient("5.1", "codex_ingestion_complete", {
-          taskId: taskForIngestion.id,
-          threadId: storedThreadIdRef.current,
-          lastResponseIdAfter: lastResponseIdRef.current,
-          durationMs: Date.now() - ingestionStart,
-          inputStillDisabled: true, // isLoading is still true here
-        })
 
         // Update thread title with the codex task's generated title
         if (storedThreadIdRef.current && taskForIngestion.title) {
@@ -1523,11 +1415,6 @@ function UnifiedDemoContent() {
       }
 
       setIsLoading(false)
-      logAuditClient("5.1", "codex_input_reenabled", {
-        taskId: taskForIngestion.id,
-        lastResponseIdAtReenable: lastResponseIdRef.current,
-        threadId: storedThreadIdRef.current,
-      })
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : "Something went wrong"
@@ -1562,11 +1449,6 @@ function UnifiedDemoContent() {
         // Mark as self-set so loadChat effect skips re-fetching
         selfSetChatIdRef.current = id
         router.replace(`/demos/unified?chatId=${id}`, { scroll: false })
-        logAuditClient("5.5", "url_push_after_thread_create", {
-          threadId: id,
-          trigger: "regular_chat",
-          urlAfter: `/demos/unified?chatId=${id}`,
-        })
         await persistMessage(id, {
           id: userMessage.localId,
           role: userMessage.role,
@@ -1589,10 +1471,6 @@ function UnifiedDemoContent() {
     try {
       await enqueueChain(async () => {
         // Send with retry logic for chain recovery
-        logAuditClient("5.8", "respond_with_retry_call", {
-          caller: "handleRegularChat",
-          previousResponseId: lastResponseIdRef.current,
-        })
         const responseData = await respondWithRetry({
           input: actualInput,
           mode: "deep",
@@ -1976,19 +1854,12 @@ function UnifiedDemoContent() {
 
         // Persist context message with metadata
         if (storedThreadIdRef.current) {
-          const ctxPersistOk = await persistMessage(storedThreadIdRef.current, {
+          await persistMessage(storedThreadIdRef.current, {
             id: contextMessage.localId,
             role: contextMessage.role,
             text: contextMessage.text,
             createdAt: contextMessage.createdAt,
             contextMeta: contextMessage.contextMeta,
-          })
-          logAuditClient("5.6", "context_meta_persisted", {
-            threadId: storedThreadIdRef.current,
-            messageId: contextMessage.localId,
-            hasContextMeta: !!contextMessage.contextMeta,
-            branchId: contextMessage.contextMeta?.branchId,
-            persisted: ctxPersistOk,
           })
         }
 
@@ -2207,12 +2078,6 @@ function UnifiedDemoContent() {
     }
 
     try {
-      logAuditClient("assistant", "assistant_context_ingest_start", {
-        taskId: task.id,
-        threadId: storedThreadIdRef.current,
-        previousResponseId: lastResponseIdRef.current,
-      })
-
       const responseData = await enqueueChain(async () =>
         respondWithRetry({
           input: contextInput,
@@ -2239,11 +2104,6 @@ function UnifiedDemoContent() {
         return next
       })
 
-      logAuditClient("assistant", "assistant_context_ingest_complete", {
-        taskId: task.id,
-        threadId: storedThreadIdRef.current,
-        newResponseId: responseData.id,
-      })
       toast.success("Assistant output added to chat context")
     } catch (error) {
       console.error("Failed to include Assistant context:", error)
