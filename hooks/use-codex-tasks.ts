@@ -12,6 +12,7 @@ import {
   persistMessage,
   updateStoredThread,
 } from "@/hooks/use-thread-persistence"
+import { markThreadWoven } from "@/lib/onboarding/progress"
 
 export function buildTaskContextInput(task: CodexTask): string | null {
   const summary = task.contextSummary
@@ -162,6 +163,9 @@ export function useCodexTasks({
       try {
         for (const task of completedTasks) {
           ingestedTaskIdsRef.current.add(task.id)
+          if (task.status === "draft_ready") {
+            markThreadWoven("codex")
+          }
           try {
             await ingestTaskContext(task)
           } catch (error) {
@@ -356,6 +360,9 @@ export function useCodexTasks({
         !ingestedTaskIdsRef.current.has(taskForIngestion.id)
       ) {
         ingestedTaskIdsRef.current.add(taskForIngestion.id)
+        if (taskForIngestion.status === "draft_ready") {
+          markThreadWoven("codex")
+        }
         try {
           await ingestTaskContext(taskForIngestion)
         } catch (error) {

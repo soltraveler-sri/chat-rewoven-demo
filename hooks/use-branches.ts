@@ -16,6 +16,7 @@ import {
   persistMessage,
   updateStoredThread,
 } from "@/hooks/use-thread-persistence"
+import { markThreadWoven } from "@/lib/onboarding/progress"
 
 export const SKIP_SUMMARIZATION_THRESHOLD = 10
 
@@ -252,6 +253,7 @@ export function useBranches({
             description: `Context from "${branch.title}" has been ingested into the chat chain.`,
           }
         )
+        markThreadWoven("branch_merge")
       }
     } catch (error) {
       const revertedBranch: BranchThread = {

@@ -14,6 +14,7 @@ import {
   createStoredThread,
   persistMessage,
 } from "@/hooks/use-thread-persistence"
+import { markThreadWoven } from "@/lib/onboarding/progress"
 
 const STORED_AUDIO_DOC_TEXT_MAX_CHARS = 60_000
 type TTSStreamConfig = { text: string; autoStart?: boolean }
@@ -93,6 +94,10 @@ export function useDocRead({
     if (fileInputRef.current) {
       fileInputRef.current.value = ""
     }
+  }, [])
+
+  const handleAudioPlaybackStart = useCallback(() => {
+    markThreadWoven("doc_audio")
   }, [])
 
   const handleDocReadSend = useCallback(async (userText: string) => {
@@ -341,6 +346,7 @@ export function useDocRead({
     ttsStreamConfigRef,
     handleFileSelect,
     handleRemoveAttachment,
+    handleAudioPlaybackStart,
     handleDocReadSend,
   }
 }

@@ -22,6 +22,7 @@ interface AudioPlayerProps {
   filename?: string
   /** TTS voice used */
   voice?: string
+  onPlaybackStart?: () => void
   className?: string
 }
 
@@ -32,6 +33,7 @@ export function AudioPlayer({
   streamConfig,
   filename,
   voice,
+  onPlaybackStart,
   className,
 }: AudioPlayerProps) {
   const shouldAutoStartStream = streamConfig?.autoStart !== false
@@ -49,6 +51,7 @@ export function AudioPlayer({
   const abortRef = useRef<AbortController | null>(null)
   const mediaSourceUrlRef = useRef<string | null>(null)
   const streamInitiatedRef = useRef(false)
+  const playbackMarkedRef = useRef(false)
 
   const speed = SPEED_OPTIONS[speedIndex]
   const isStreamMode = !!streamConfig
@@ -65,7 +68,13 @@ export function AudioPlayer({
     }
     const onEnded = () => setIsPlaying(false)
     const onWaiting = () => { if (isStreamMode) setIsBuffering(true) }
-    const onPlaying = () => setIsBuffering(false)
+    const onPlaying = () => {
+      setIsBuffering(false)
+      if (!playbackMarkedRef.current) {
+        playbackMarkedRef.current = true
+        onPlaybackStart?.()
+      }
+    }
     const onProgress = () => {
       if (audio.buffered.length > 0) {
         setBufferedTime(audio.buffered.end(audio.buffered.length - 1))
@@ -94,39 +103,7 @@ export function AudioPlayer({
       audio.removeEventListener("playing", onPlaying)
       audio.removeEventListener("progress", onProgress)
     }
-  }, [audioUrl, isStreamMode])
-
-  const beginStream = useCallback(() => {
-    if (!streamConfig || audioUrl || streamInitiatedRef.current) return
-    streamInitiatedRef.current = true
-    setHasStreamStarted(true)
-    setIsBuffering(true)
-    setStreamError(null)
-
-    const abortController = new AbortController()
-    abortRef.current = abortController
-
-    // Check MediaSource support for audio/mpeg
-    const canUseMediaSource =
-      typeof MediaSource !== "undefined" &&
-      MediaSource.isTypeSupported("audio/mpeg")
-
-    const t0 = performance.now()
-    console.log(`[TTS:telemetry] Stream init | path=${canUseMediaSource ? "MediaSource" : "fallback"} | textLen=${streamConfig.text.length}`)
-
-    if (canUseMediaSource) {
-      startMediaSourceStream(streamConfig, abortController.signal, t0)
-    } else {
-      startFallbackStream(streamConfig, abortController.signal, t0)
-    }
-  }, [audioUrl, streamConfig])
-
-  // Streaming setup — auto-starts only for fresh read-aloud messages.
-  useEffect(() => {
-    if (shouldAutoStartStream) {
-      beginStream()
-    }
-  }, [beginStream, shouldAutoStartStream])
+  }, [audioUrl, isStreamMode, onPlaybackStart])
 
   useEffect(() => {
     return () => {
@@ -138,11 +115,11 @@ export function AudioPlayer({
     }
   }, [])
 
-  async function startMediaSourceStream(
+  const startMediaSourceStream = useCallback(async (
     config: TTSStreamConfig,
     signal: AbortSignal,
     t0: number
-  ) {
+  ) => {
     try {
       const ms = new MediaSource()
       const msUrl = URL.createObjectURL(ms)
@@ -215,6 +192,10 @@ export function AudioPlayer({
             a.play()
               .then(() => {
                 setIsPlaying(true)
+                if (!playbackMarkedRef.current) {
+                  playbackMarkedRef.current = true
+                  onPlaybackStart?.()
+                }
                 console.log(`[TTS:telemetry] Audio playback STARTED | +${Math.round(performance.now() - t0)}ms`)
               })
               .catch((playErr) => {
@@ -243,13 +224,13 @@ export function AudioPlayer({
       setStreamError(err instanceof Error ? err.message : "Streaming failed")
       setIsBuffering(false)
     }
-  }
+  }, [onPlaybackStart])
 
-  async function startFallbackStream(
+  const startFallbackStream = useCallback(async (
     config: TTSStreamConfig,
     signal: AbortSignal,
     t0: number
-  ) {
+  ) => {
     try {
       console.log(`[TTS:telemetry] Fallback: sending fetch | +${Math.round(performance.now() - t0)}ms`)
 
@@ -281,6 +262,10 @@ export function AudioPlayer({
         audio.play()
           .then(() => {
             setIsPlaying(true)
+            if (!playbackMarkedRef.current) {
+              playbackMarkedRef.current = true
+              onPlaybackStart?.()
+            }
             console.log(`[TTS:telemetry] Fallback: playback STARTED | +${Math.round(performance.now() - t0)}ms`)
           })
           .catch((playErr) => {
@@ -296,7 +281,39 @@ export function AudioPlayer({
       setStreamError(err instanceof Error ? err.message : "TTS failed")
       setIsBuffering(false)
     }
-  }
+  }, [onPlaybackStart])
+
+  const beginStream = useCallback(() => {
+    if (!streamConfig || audioUrl || streamInitiatedRef.current) return
+    streamInitiatedRef.current = true
+    setHasStreamStarted(true)
+    setIsBuffering(true)
+    setStreamError(null)
+
+    const abortController = new AbortController()
+    abortRef.current = abortController
+
+    // Check MediaSource support for audio/mpeg
+    const canUseMediaSource =
+      typeof MediaSource !== "undefined" &&
+      MediaSource.isTypeSupported("audio/mpeg")
+
+    const t0 = performance.now()
+    console.log(`[TTS:telemetry] Stream init | path=${canUseMediaSource ? "MediaSource" : "fallback"} | textLen=${streamConfig.text.length}`)
+
+    if (canUseMediaSource) {
+      startMediaSourceStream(streamConfig, abortController.signal, t0)
+    } else {
+      startFallbackStream(streamConfig, abortController.signal, t0)
+    }
+  }, [audioUrl, streamConfig, startFallbackStream, startMediaSourceStream])
+
+  // Streaming setup — auto-starts only for fresh read-aloud messages.
+  useEffect(() => {
+    if (shouldAutoStartStream) {
+      beginStream()
+    }
+  }, [beginStream, shouldAutoStartStream])
 
   const togglePlay = useCallback(() => {
     const audio = audioRef.current

@@ -23,6 +23,7 @@ import {
   createStoredThread,
   persistMessage,
 } from "@/hooks/use-thread-persistence"
+import { markThreadWoven } from "@/lib/onboarding/progress"
 
 function createPendingAssistantTask(id: string, requestText: string): AssistantTaskResult {
   const now = Date.now()
@@ -222,6 +223,9 @@ export function useAssistantTasks({
       }
 
       setAssistantTasks((prev) => ({ ...prev, [data.task.id]: data.task }))
+      if (data.task.status === "ready" || data.task.status === "no_results") {
+        markThreadWoven("assistant")
+      }
       return data.task
     },
     [buildAssistantLocalThreads, buildCurrentAssistantThread]

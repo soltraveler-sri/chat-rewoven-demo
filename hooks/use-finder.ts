@@ -9,6 +9,7 @@ import { SessionChatCache } from "@/lib/session-cache"
 import type { MainThreadState } from "@/lib/types"
 import type { FindResponse } from "@/lib/chat/unified"
 import { updateStoredThread } from "@/hooks/use-thread-persistence"
+import { markThreadWoven } from "@/lib/onboarding/progress"
 
 interface UseFinderArgs {
   router: AppRouterInstance
@@ -69,6 +70,10 @@ export function useFinder({
 
       setFinderOptions(options)
 
+      if (options.length > 0) {
+        markThreadWoven("find")
+      }
+
       if (options.length === 0) {
         toast.info("No matching chats found")
       }
@@ -96,6 +101,7 @@ export function useFinder({
       }
 
       router.push(`/?chatId=${chatId}`)
+      markThreadWoven("find")
     } catch (error) {
       console.error("Failed to navigate to chat:", error)
       toast.error("Failed to open chat")
@@ -113,4 +119,3 @@ export function useFinder({
     handleOpenFoundChat,
   }
 }
-
