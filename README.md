@@ -3,7 +3,7 @@
 *A working concept for the next iteration of the ChatGPT interface — branching, history, code tasks, documents, and an assistant, woven into one chat.*
 
 ![A side branch open next to the main conversation](docs/screenshots/branch-panel.png)
-*A branch: a side conversation that lives next to the thread it forked from — and can rejoin it.*
+*Improved Branched chats, placing them within the surface as your main chat... rather than opening up new tabs for branches, which take you out of your main workflow.*
 
 ## Why this exists
 
