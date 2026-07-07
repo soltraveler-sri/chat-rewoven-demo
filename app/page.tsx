@@ -221,28 +221,80 @@ function UnifiedDemoContent() {
       })
     }
 
+    let pendingAssistantLocalId: string | null = null
+
     try {
       await enqueueChain(async () => {
+        const assistantLocalId = generateId()
+        pendingAssistantLocalId = assistantLocalId
+        let assistantCreatedAt = Date.now()
+        let assistantMessageCreated = false
+        let streamedText = ""
+
         const responseData = await respondWithRetry({
           input: actualInput,
           mode: "deep",
           source: "user",
+          onDelta: (text) => {
+            if (!text) return
+            streamedText += text
+            setIsLoading(false)
+
+            if (!assistantMessageCreated) {
+              assistantMessageCreated = true
+              assistantCreatedAt = Date.now()
+              setState((prev) => ({
+                ...prev,
+                messages: [
+                  ...prev.messages,
+                  {
+                    localId: assistantLocalId,
+                    role: "assistant",
+                    text: streamedText,
+                    createdAt: assistantCreatedAt,
+                  },
+                ],
+              }))
+              return
+            }
+
+            setState((prev) => ({
+              ...prev,
+              messages: prev.messages.map((message) =>
+                message.localId === assistantLocalId
+                  ? { ...message, text: streamedText }
+                  : message
+              ),
+            }))
+          },
         })
 
         const assistantMessage: UnifiedMessage = {
-          localId: generateId(),
+          localId: assistantLocalId,
           role: "assistant",
           text: responseData.output_text,
-          createdAt: Date.now(),
+          createdAt: assistantCreatedAt,
           responseId: responseData.id,
         }
 
         lastResponseIdRef.current = responseData.id
-        setState((prev) => ({
-          ...prev,
-          messages: [...prev.messages, assistantMessage],
-          lastResponseId: responseData.id,
-        }))
+        setState((prev) => {
+          const hasDraftMessage = prev.messages.some(
+            (message) => message.localId === assistantLocalId
+          )
+
+          return {
+            ...prev,
+            messages: hasDraftMessage
+              ? prev.messages.map((message) =>
+                  message.localId === assistantLocalId
+                    ? assistantMessage
+                    : message
+                )
+              : [...prev.messages, assistantMessage],
+            lastResponseId: responseData.id,
+          }
+        })
 
         setIsLoading(false)
 
@@ -296,6 +348,14 @@ function UnifiedDemoContent() {
       const errorMessage =
         error instanceof Error ? error.message : "Something went wrong"
       toast.error(errorMessage)
+      if (pendingAssistantLocalId) {
+        setState((prev) => ({
+          ...prev,
+          messages: prev.messages.filter(
+            (message) => message.localId !== pendingAssistantLocalId
+          ),
+        }))
+      }
     } finally {
       setIsLoading(false)
     }

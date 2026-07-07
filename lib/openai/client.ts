@@ -14,6 +14,7 @@
  */
 
 import OpenAI from "openai"
+import type { Stream } from "openai/core/streaming"
 import { z } from "zod"
 import { zodTextFormat } from "openai/helpers/zod"
 
@@ -333,6 +334,8 @@ export function getConfigInfo(kind: RequestKind): {
  * Non-streaming response create params
  */
 type NonStreamingResponseParams = OpenAI.Responses.ResponseCreateParamsNonStreaming
+type BaseResponseParams = Omit<NonStreamingResponseParams, "stream">
+type StreamingResponseParams = OpenAI.Responses.ResponseCreateParamsStreaming
 
 /**
  * Build common request parameters for a given kind
@@ -353,7 +356,7 @@ function buildCommonParams(
     reasoningEffortOverride?: ReasoningEffort
     storeOverride?: boolean
   }
-): NonStreamingResponseParams {
+): BaseResponseParams {
   const model = getModel(kind)
   const reasoning = options?.reasoningEffortOverride ?? getReasoningEffort(kind)
   const verbosity = getTextVerbosity(kind)
@@ -365,12 +368,11 @@ function buildCommonParams(
     ? options.storeOverride 
     : CHAINED_KINDS.has(kind)
 
-  const params: NonStreamingResponseParams = {
+  const params: BaseResponseParams = {
     model,
     input,
     store: shouldStore,
-    stream: false,
-    reasoning: { effort: reasoning } as NonStreamingResponseParams["reasoning"],
+    reasoning: { effort: reasoning } as BaseResponseParams["reasoning"],
     text: {
       format: { type: "text" },
       verbosity,
@@ -405,6 +407,10 @@ export async function createTextResponse(options: {
     instructions: options.instructions,
     storeOverride: options.storeOverride,
   })
+  const createParams: NonStreamingResponseParams = {
+    ...params,
+    stream: false,
+  }
 
   const config = getConfigInfo(options.kind)
   console.log(`[OpenAI:${options.kind}] Request:`, {
@@ -415,7 +421,7 @@ export async function createTextResponse(options: {
   })
 
   try {
-    const response = await client.responses.create(params, {
+    const response = await client.responses.create(createParams, {
       signal: options.abortSignal,
     })
 
@@ -426,6 +432,46 @@ export async function createTextResponse(options: {
     })
 
     return response
+  } catch (error) {
+    handleOpenAIError(error, options.kind, config)
+    throw error
+  }
+}
+
+/**
+ * Create a streaming text response request
+ */
+export async function createTextResponseStream(options: {
+  kind: RequestKind
+  input: string | OpenAI.Responses.ResponseInput
+  previousResponseId?: string | null
+  instructions?: string
+  abortSignal?: AbortSignal
+  storeOverride?: boolean
+}): Promise<Stream<OpenAI.Responses.ResponseStreamEvent>> {
+  const client = getOpenAIClient()
+  const params = buildCommonParams(options.kind, options.input, {
+    previousResponseId: options.previousResponseId,
+    instructions: options.instructions,
+    storeOverride: options.storeOverride,
+  })
+  const createParams: StreamingResponseParams = {
+    ...params,
+    stream: true,
+  }
+
+  const config = getConfigInfo(options.kind)
+  console.log(`[OpenAI:${options.kind}] Stream request:`, {
+    model: config.model,
+    reasoning: config.reasoning,
+    verbosity: config.verbosity,
+    hasPreviousResponseId: !!options.previousResponseId,
+  })
+
+  try {
+    return await client.responses.create(createParams, {
+      signal: options.abortSignal,
+    })
   } catch (error) {
     handleOpenAIError(error, options.kind, config)
     throw error
@@ -474,8 +520,12 @@ export async function createSummarizeResponse(options: {
       reasoningEffortOverride: reasoning,
       storeOverride: false, // Summarization never stores
     })
+    const createParams: NonStreamingResponseParams = {
+      ...params,
+      stream: false,
+    }
 
-    return client.responses.create(params, {
+    return client.responses.create(createParams, {
       signal: options.abortSignal,
     })
   }

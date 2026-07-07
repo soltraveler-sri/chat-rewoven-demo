@@ -5,7 +5,13 @@ import type { Dispatch, MutableRefObject, SetStateAction } from "react"
 import { toast } from "sonner"
 import type { BranchCloseResult } from "@/components/chat"
 import { generateId, type UnifiedMessage } from "@/lib/chat/unified"
-import type { BranchThread, MainThreadState, RespondResponse, SummarizeResponse } from "@/lib/types"
+import type {
+  BranchThread,
+  MainThreadState,
+  RespondResponse,
+  RespondWithRetryArgs,
+  SummarizeResponse,
+} from "@/lib/types"
 import {
   persistMessage,
   updateStoredThread,
@@ -35,11 +41,7 @@ interface UseBranchesArgs {
   storedThreadIdRef: MutableRefObject<string | null>
   lastResponseIdRef: MutableRefObject<string | null>
   enqueueChain: <T>(operation: () => Promise<T>) => Promise<T>
-  respondWithRetry: (args: {
-    input: string
-    mode: "fast" | "deep"
-    source: "ingestion" | "user"
-  }) => Promise<RespondResponse>
+  respondWithRetry: (args: RespondWithRetryArgs) => Promise<RespondResponse>
 }
 
 export function useBranches({
@@ -317,4 +319,3 @@ export function useBranches({
     performMerge,
   }
 }
-

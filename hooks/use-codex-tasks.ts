@@ -6,7 +6,7 @@ import type { AppRouterInstance } from "next/dist/shared/lib/app-router-context.
 import { toast } from "sonner"
 import type { CodexTask, WorkspaceSnapshot } from "@/lib/codex/types"
 import { extractCodexPrompt, generateId, type UnifiedMessage } from "@/lib/chat/unified"
-import type { MainThreadState, RespondResponse } from "@/lib/types"
+import type { MainThreadState, RespondResponse, RespondWithRetryArgs } from "@/lib/types"
 import {
   createStoredThread,
   persistMessage,
@@ -56,11 +56,7 @@ interface UseCodexTasksArgs {
   selfSetChatIdRef: MutableRefObject<string | null>
   lastResponseIdRef: MutableRefObject<string | null>
   enqueueChain: <T>(operation: () => Promise<T>) => Promise<T>
-  respondWithRetry: (args: {
-    input: string
-    mode: "fast" | "deep"
-    source: "ingestion" | "user"
-  }) => Promise<RespondResponse>
+  respondWithRetry: (args: RespondWithRetryArgs) => Promise<RespondResponse>
   fetchThreads: () => Promise<void>
   setIsLoading: Dispatch<SetStateAction<boolean>>
 }

@@ -5,7 +5,11 @@ import type { Dispatch, MutableRefObject, SetStateAction } from "react"
 import type { AppRouterInstance } from "next/dist/shared/lib/app-router-context.shared-runtime"
 import { toast } from "sonner"
 import { generateId, type UnifiedMessage } from "@/lib/chat/unified"
-import type { MainThreadState, RespondResponse } from "@/lib/types"
+import type {
+  MainThreadState,
+  RespondResponse,
+  RespondWithRetryArgs,
+} from "@/lib/types"
 import {
   createStoredThread,
   persistMessage,
@@ -19,11 +23,7 @@ interface UseDocReadArgs {
   selfSetChatIdRef: MutableRefObject<string | null>
   lastResponseIdRef: MutableRefObject<string | null>
   enqueueChain: <T>(operation: () => Promise<T>) => Promise<T>
-  respondWithRetry: (args: {
-    input: string
-    mode: "fast" | "deep"
-    source: "ingestion" | "user"
-  }) => Promise<RespondResponse>
+  respondWithRetry: (args: RespondWithRetryArgs) => Promise<RespondResponse>
   fetchThreads: () => Promise<void>
 }
 
@@ -139,6 +139,8 @@ export function useDocRead({
       })
     }
 
+    let pendingAssistantLocalId: string | null = null
+
     try {
       const lowerText = userText.toLowerCase()
       const READ_KEYWORDS = [
@@ -206,26 +208,76 @@ export function useDocRead({
       } else {
         await enqueueChain(async () => {
           const contextInput = `[Document: ${filename}]\n\n${extractedDocText.slice(0, 30000)}\n\n---\n\nUser question: ${userText}`
+          const assistantLocalId = generateId()
+          pendingAssistantLocalId = assistantLocalId
+          let assistantCreatedAt = Date.now()
+          let assistantMessageCreated = false
+          let streamedText = ""
+
           const responseData = await respondWithRetry({
             input: contextInput,
             mode: "deep",
             source: "user",
+            onDelta: (text) => {
+              if (!text) return
+              streamedText += text
+              setIsLoading(false)
+
+              if (!assistantMessageCreated) {
+                assistantMessageCreated = true
+                assistantCreatedAt = Date.now()
+                setState((prev) => ({
+                  ...prev,
+                  messages: [
+                    ...prev.messages,
+                    {
+                      localId: assistantLocalId,
+                      role: "assistant",
+                      text: streamedText,
+                      createdAt: assistantCreatedAt,
+                    },
+                  ],
+                }))
+                return
+              }
+
+              setState((prev) => ({
+                ...prev,
+                messages: prev.messages.map((message) =>
+                  message.localId === assistantLocalId
+                    ? { ...message, text: streamedText }
+                    : message
+                ),
+              }))
+            },
           })
 
           const assistantMessage: UnifiedMessage = {
-            localId: generateId(),
+            localId: assistantLocalId,
             role: "assistant",
             text: responseData.output_text,
-            createdAt: Date.now(),
+            createdAt: assistantCreatedAt,
             responseId: responseData.id,
           }
 
           lastResponseIdRef.current = responseData.id
-          setState((prev) => ({
-            ...prev,
-            messages: [...prev.messages, assistantMessage],
-            lastResponseId: responseData.id,
-          }))
+          setState((prev) => {
+            const hasDraftMessage = prev.messages.some(
+              (message) => message.localId === assistantLocalId
+            )
+
+            return {
+              ...prev,
+              messages: hasDraftMessage
+                ? prev.messages.map((message) =>
+                    message.localId === assistantLocalId
+                      ? assistantMessage
+                      : message
+                  )
+                : [...prev.messages, assistantMessage],
+              lastResponseId: responseData.id,
+            }
+          })
 
           const threadId = storedThreadIdRef.current
           if (threadId) {
@@ -242,6 +294,14 @@ export function useDocRead({
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "Something went wrong"
       toast.error(errorMessage)
+      if (pendingAssistantLocalId) {
+        setState((prev) => ({
+          ...prev,
+          messages: prev.messages.filter(
+            (message) => message.localId !== pendingAssistantLocalId
+          ),
+        }))
+      }
     } finally {
       setIsLoading(false)
       setIsGeneratingTTS(false)
@@ -275,4 +335,3 @@ export function useDocRead({
     handleDocReadSend,
   }
 }
-

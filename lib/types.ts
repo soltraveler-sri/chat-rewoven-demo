@@ -88,11 +88,19 @@ export interface RespondRequest {
   input: string
   previous_response_id?: string | null
   mode?: "fast" | "deep"
+  stream?: boolean
 }
 
 export interface RespondResponse {
   id: string
   output_text: string
+}
+
+export interface RespondWithRetryArgs {
+  input: string
+  mode: "fast" | "deep"
+  source: "ingestion" | "user"
+  onDelta?: (text: string) => void
 }
 
 export interface SummarizeRequest {

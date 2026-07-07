@@ -12,7 +12,7 @@ import type {
 } from "@/lib/assistant/types"
 import { SessionChatCache } from "@/lib/session-cache"
 import type { StoredChatThreadMeta } from "@/lib/store/types"
-import type { MainThreadState, RespondResponse } from "@/lib/types"
+import type { MainThreadState, RespondResponse, RespondWithRetryArgs } from "@/lib/types"
 import {
   extractAssistantPrompt,
   generateId,
@@ -120,11 +120,7 @@ interface UseAssistantTasksArgs {
   selfSetChatIdRef: MutableRefObject<string | null>
   lastResponseIdRef: MutableRefObject<string | null>
   enqueueChain: <T>(operation: () => Promise<T>) => Promise<T>
-  respondWithRetry: (args: {
-    input: string
-    mode: "fast" | "deep"
-    source: "ingestion" | "user"
-  }) => Promise<RespondResponse>
+  respondWithRetry: (args: RespondWithRetryArgs) => Promise<RespondResponse>
   fetchThreads: () => Promise<void>
 }
 
