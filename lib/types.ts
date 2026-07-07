@@ -31,7 +31,8 @@ export interface ChatMessage {
   audioUrl?: string
   /** Audio metadata for doc-read messages */
   audioMeta?: {
-    voice: string
+    /** Voice used, when known — the server owns the default */
+    voice?: string
     filename: string
   }
 }

@@ -112,7 +112,7 @@ ${transcript}
 Summary:`
 
     // Call OpenAI to generate summary using centralized client
-    // Uses "summarize" kind: gpt-5-nano with reasoning: low (NOT "none"!)
+    // Uses the "summarize" request kind from the centralized client
     const config = getConfigInfo("summarize")
     console.log(
       `[Summary] Generating summary for chat ${id} with model ${config.model}`

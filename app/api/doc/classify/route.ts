@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { z } from "zod"
-import { getOpenAIClient } from "@/lib/openai"
-import { zodTextFormat } from "openai/helpers/zod"
+import { createParsedResponse } from "@/lib/openai"
 
 export const runtime = "nodejs"
 
@@ -15,8 +14,6 @@ const IntentSchema = z.object({
   intent: z.enum(["read_aloud", "discuss"]),
   confidence: z.number(),
 })
-
-const DOC_INTENT_MODEL = process.env.OPENAI_MODEL_DOC_INTENT || "gpt-5.4-nano"
 
 const CLASSIFY_INSTRUCTIONS = `You classify user intent when they attach a document. Pick ONE:
 
@@ -44,22 +41,14 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const client = getOpenAIClient()
-
-    console.log(`[Doc:classify] Using model: ${DOC_INTENT_MODEL}`)
-
-    const response = await client.responses.parse({
-      model: DOC_INTENT_MODEL,
+    // Uses the "intent" request kind from the centralized client
+    const { parsed } = await createParsedResponse({
+      kind: "intent",
       input: `The user attached a file called "${body.filename}" and said: "${body.userMessage}"`,
+      schema: IntentSchema,
+      schemaName: "doc_intent",
       instructions: CLASSIFY_INSTRUCTIONS,
-      store: false,
-      reasoning: { effort: "low" },
-      text: {
-        format: zodTextFormat(IntentSchema, "doc_intent"),
-      },
     })
-
-    const parsed = response.output_parsed as { intent: "read_aloud" | "discuss"; confidence: number } | null
 
     if (!parsed) {
       // Default to discuss if classification fails

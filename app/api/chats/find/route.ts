@@ -367,7 +367,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Step B: LLM rerank using centralized client
-    // Uses "finder" kind: gpt-5-mini with reasoning: low (NOT "none"!)
+    // Uses the "finder" request kind from the centralized client
     const prompt = buildRerankPrompt(query, scoredCandidates, topK)
     const config = getConfigInfo("finder")
 

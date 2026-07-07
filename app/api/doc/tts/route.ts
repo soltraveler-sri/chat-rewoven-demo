@@ -1,5 +1,12 @@
 import { NextRequest, NextResponse } from "next/server"
-import { chunkText, generateChunkAudio, type TTSVoice, TTS_VOICES } from "@/lib/doc/tts"
+import {
+  chunkText,
+  generateChunkAudio,
+  getTTSModel,
+  getTTSVoice,
+  type TTSVoice,
+  TTS_VOICES,
+} from "@/lib/doc/tts"
 
 export const runtime = "nodejs"
 
@@ -8,9 +15,8 @@ export const maxDuration = 120 // 2 minutes
 
 interface TTSRequest {
   text: string
+  /** Optional voice override; model selection is server-side only */
   voice?: TTSVoice
-  model?: "tts-1" | "tts-1-hd"
-  speed?: number
 }
 
 /**
@@ -47,13 +53,14 @@ export async function POST(request: NextRequest) {
 
     const textChunks = chunkText(text)
 
-    console.log(`[Doc:tts] Streaming TTS for ${text.length} chars, ${textChunks.length} chunks, voice: ${body.voice || "nova"}`)
-
     const options = {
-      voice: (body.voice || "nova") as TTSVoice,
-      model: (body.model || "tts-1") as "tts-1" | "tts-1-hd",
-      speed: body.speed || 1.0,
+      voice: body.voice || getTTSVoice(),
+      model: getTTSModel(),
     }
+
+    console.log(
+      `[Doc:tts] Streaming TTS for ${text.length} chars, ${textChunks.length} chunks, voice: ${options.voice}, model: ${options.model}`
+    )
 
     // Stream MP3 bytes as each chunk is generated
     const t0 = Date.now()

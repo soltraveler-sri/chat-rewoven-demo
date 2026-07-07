@@ -204,7 +204,7 @@ export async function POST(request: NextRequest) {
     const prompt = buildCategorizationPrompt(chatPayloads)
 
     // Step 5: Call OpenAI with structured outputs using centralized client
-    // Uses "stacks" kind: gpt-5-nano with reasoning: low (NOT "none"!)
+    // Uses the "stacks" request kind from the centralized client
     const config = getConfigInfo("stacks")
     console.log(
       `[Stacks Refresh] Processing ${fullThreads.length} chats with model ${config.model}`

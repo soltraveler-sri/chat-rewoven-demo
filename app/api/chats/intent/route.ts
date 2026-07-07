@@ -100,7 +100,7 @@ export async function POST(request: NextRequest) {
     const prompt = buildIntentPrompt(message, context)
 
     // Call OpenAI with structured output using centralized client
-    // Uses "intent" kind: gpt-5-nano with reasoning: low (NOT "none"!)
+    // Uses the "intent" request kind from the centralized client
     const { parsed } = await createParsedResponse({
       kind: "intent",
       input: prompt,

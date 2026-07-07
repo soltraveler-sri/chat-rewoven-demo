@@ -442,7 +442,7 @@ function UnifiedDemoContent() {
   const [isGeneratingTTS, setIsGeneratingTTS] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   /** Stores TTS stream configs keyed by message localId — AudioPlayer reads these for streaming */
-  const ttsStreamConfigRef = useRef<Map<string, { text: string; voice: string; model: string }>>(new Map())
+  const ttsStreamConfigRef = useRef<Map<string, { text: string }>>(new Map())
 
   // ==========================================================================
   // PERSISTENCE STATE
@@ -1827,10 +1827,9 @@ function UnifiedDemoContent() {
         const msgId = generateId()
 
         // Store stream config for AudioPlayer to pick up
+        // (model/voice defaults are owned by the server)
         ttsStreamConfigRef.current.set(msgId, {
           text: extractedDocText,
-          voice: "nova",
-          model: "tts-1",
         })
 
         const assistantMessage: UnifiedMessage = {
@@ -1838,7 +1837,7 @@ function UnifiedDemoContent() {
           role: "assistant",
           text: `Here's the audio reading of "${filename}".`,
           createdAt: Date.now(),
-          audioMeta: { voice: "nova", filename },
+          audioMeta: { filename },
         }
 
         setState((prev) => ({

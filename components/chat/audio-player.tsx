@@ -7,9 +7,8 @@ import { cn } from "@/lib/utils"
 
 export interface TTSStreamConfig {
   text: string
+  /** Optional voice override; the server owns model/voice defaults */
   voice?: string
-  model?: string
-  speed?: number
 }
 
 interface AudioPlayerProps {
@@ -154,9 +153,7 @@ export function AudioPlayer({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           text: config.text,
-          voice: config.voice || "nova",
-          model: config.model || "tts-1",
-          speed: config.speed || 1.0,
+          ...(config.voice ? { voice: config.voice } : {}),
         }),
         signal,
       })
@@ -247,9 +244,7 @@ export function AudioPlayer({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           text: config.text,
-          voice: config.voice || "nova",
-          model: config.model || "tts-1",
-          speed: config.speed || 1.0,
+          ...(config.voice ? { voice: config.voice } : {}),
         }),
         signal,
       })

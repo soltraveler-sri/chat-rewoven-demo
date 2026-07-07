@@ -7,6 +7,15 @@
  */
 
 import { getOpenAIClient } from "@/lib/openai"
+import {
+  DEFAULT_TTS_MODEL,
+  DEFAULT_TTS_VOICE,
+  TTS_VOICES,
+  type TTSVoice,
+} from "./tts-constants"
+
+export { TTS_VOICES, DEFAULT_TTS_MODEL, DEFAULT_TTS_VOICE }
+export type { TTSVoice }
 
 /**
  * Target chunk size for TTS requests.
@@ -15,24 +24,20 @@ import { getOpenAIClient } from "@/lib/openai"
  */
 const TTS_CHUNK_SIZE = 500
 
-/** Available OpenAI TTS voices */
-export const TTS_VOICES = [
-  "alloy",
-  "echo",
-  "fable",
-  "onyx",
-  "nova",
-  "shimmer",
-] as const
+/** Server-side defaults with env overrides — clients should not pick models */
+export function getTTSModel(): string {
+  return process.env.OPENAI_MODEL_TTS || DEFAULT_TTS_MODEL
+}
 
-export type TTSVoice = (typeof TTS_VOICES)[number]
+export function getTTSVoice(): TTSVoice {
+  const envVoice = process.env.OPENAI_TTS_VOICE as TTSVoice | undefined
+  return envVoice && TTS_VOICES.includes(envVoice) ? envVoice : DEFAULT_TTS_VOICE
+}
 
 export interface TTSOptions {
   voice?: TTSVoice
-  /** "tts-1" for speed, "tts-1-hd" for quality */
-  model?: "tts-1" | "tts-1-hd"
-  /** Playback speed multiplier (0.25 to 4.0) */
-  speed?: number
+  /** TTS model ID; defaults to the latest gpt-4o-mini-tts snapshot */
+  model?: string
 }
 
 /**
@@ -100,12 +105,13 @@ export async function generateChunkAudio(
 ): Promise<Buffer> {
   const client = getOpenAIClient()
 
+  // Note: no `speed` param — it is unsupported on gpt-4o-mini-tts models;
+  // playback speed is handled client-side via audio.playbackRate.
   const response = await client.audio.speech.create({
-    model: options.model || "tts-1",
-    voice: options.voice || "nova",
+    model: options.model || getTTSModel(),
+    voice: options.voice || getTTSVoice(),
     input: text,
     response_format: "mp3",
-    speed: options.speed || 1.0,
   })
 
   const arrayBuffer = await response.arrayBuffer()
