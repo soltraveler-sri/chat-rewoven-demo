@@ -17,11 +17,11 @@ Replies stream token-by-token via server-sent events.
 ### 1. Branch, isolate, and merge
 
 1. Send any message and wait for a reply.
-2. Hover the assistant's reply — a "Branch from here" icon appears.
+2. Click the **Branch** chip under the assistant's reply. The branch opens as its own writing surface on the right — the main chat stays faintly visible on the left (click it any time to return).
 3. In the side thread, tell the assistant something specific: "The password is 'banana123.'"
-4. Close the branch with the **Include in main context** toggle off (the default). A "Branch kept separate" toast confirms it.
+4. Close the branch (✕, Escape, or click the dimmed main chat) with the context pill reading **Kept separate** (the default). A "Branch kept separate" toast confirms it.
 5. Back in the main chat, ask "What's the password?" — the assistant doesn't know. The branch never touched the main conversation chain.
-6. Reopen the branch chip, turn **Include in main context** on, and pick a merge mode from the **···** menu: **Include as summary** (default, a short bullet summary) or **Include full transcript** (the entire branch conversation).
+6. Reopen the branch from its chip, click the context pill so it reads **Including main context**, and pick a merge mode from the **···** menu: **Include as summary** (default, a short bullet summary) or **Include full transcript** (the entire branch conversation).
 7. Close the branch. A context card appears in the main chat, the branch chip turns green, and a "Branch context merged" toast confirms it.
 8. Ask the main chat about the password again — it now knows. The merge is chained through the OpenAI Responses API's `previous_response_id`, and it's persisted: reload the page and the merged context is still there.
 
