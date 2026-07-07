@@ -1,289 +1,75 @@
-# LLM Chat Demos
+# Chat, rewoven
 
-Product improvements to LLM chat interfaces, showcasing better UX patterns for AI conversations. Three standalone demos explore different interaction models -- branching, persistent history with semantic search, and AI code generation -- plus a unified interface that combines them all.
+*A working concept for the next iteration of the ChatGPT interface — branching, history, code tasks, documents, and an assistant, woven into one chat.*
 
-## Features
+This is a demo, not a product — built to make an argument about interface design, not to ship.
 
-- **Branch Overlay Demo** - Context isolation and merging via conversation branches with visual tree navigation
-- **History Demo** - Persistent chat threads with Smart Stacks categorization, semantic search, and an AI-powered chat finder
-- **Codex Demo** - Natural language code generation with a simulated workspace, apply/PR workflow, and progress visualization
-- **Unified Demo** - All features integrated in a single chat interface (default landing page)
+![Chat, rewoven — the unified chat interface](docs/screenshots/chat-light.png)
+*The unified chat at `/`: a conversation where a side branch's context has been merged back in — and the next reply uses it.*
 
-## Tech Stack
+## Why this exists
 
-- Next.js 16 (App Router)
-- TypeScript
-- Tailwind CSS v4
-- shadcn/ui (Radix-based components)
-- OpenAI Responses API
+OpenAI's product has quietly become several products. Chat lives in its own app. Code generation lives in Codex. Custom behavior lives in GPTs. File analysis, voice, memory — each one arrived as its own surface, its own mental model, its own tab. That's a reasonable way to ship fast. It's a worse way to think, because every surface switch is a tax on the user: re-explain context, lose the thread, remember where you left something.
 
-## Getting Started
+This demo asks a narrower question: how much of that scattered space can be woven back into the chat itself, without the chat collapsing under its own cleverness? The answer isn't "everything belongs in the thread." A feature earns its place here only if being *in* the conversation is what makes it work — branching only matters because it can rejoin the thread it left; a code task only matters if the chat can talk about it afterward; a document only matters if you can ask about it instead of switching to a viewer. Five ideas passed that bar. Plenty of others didn't make the cut, and that filter is itself the point being made.
 
-1. Install dependencies:
+## Try it
+
+**Live demo:** [chat-rewoven.vercel.app](https://chat-rewoven.vercel.app)
+
+A 60-second tour, in order:
+
+1. Send a prompt from the empty-state suggestions and watch the reply stream in.
+2. Hover the reply and click **branch from here**. Tell the branch a secret. Close it with merge off — the main chat won't know it happened.
+3. Reopen the branch, turn merge on, close it again. Ask the main chat about the secret — now it knows, because the merged context survives in the conversation chain.
+4. Type `/find` followed by a few words about an earlier chat and open the result it surfaces.
+5. Type `@codex` followed by a small feature request. Watch the task card build a plan and a diff, then ask the chat a follow-up question about what it just generated.
+6. Attach a PDF and say "read this to me" — audio streams in as it's generated, with a player that stays in the thread.
+7. Type `@assistant find unfinished work from this week` and see it reason across your other chats.
+
+## The five ideas
+
+**Branching & context control.** Exploring a tangent in a live chat forces a choice between derailing the main thread or losing the tangent entirely. A branch lets you fork from any assistant reply, go explore, and decide afterward — not before — whether that exploration belongs in the main record, as a summary or as the full transcript. Merges are chained through the OpenAI Responses API's `previous_response_id`, so a merged branch is still there after a reload, not just in memory.
+
+**Persistent history that's actually retrievable.** History is only useful if you can find something in it later, and "search" usually means grep-ing titles you didn't write. Threads here title and summarize themselves, Smart Stacks groups them into categories automatically, and `/find` answers a natural-language question like "that chat about the Kyoto trip" with ranked results, each carrying a plain-language reason it matched and a confidence label (high / good / possible match).
+
+**Codex-style task cards.** Asking an assistant to write code and getting back a wall of text in a chat bubble is a bad review experience. `@codex` in the chat spawns a task card with a plan, a per-file diff, and an apply-to-workspace step — code review, not code prose. Once a task completes, it's folded back into the chat's context automatically, so the next message can ask about the code it just wrote without re-pasting anything.
+
+**Documents & voice.** Attaching a file to a chat usually means the file becomes inert — a static object the model glances at once. Here a PDF or DOCX stays part of the conversation: ask questions about it, or say "read this to me" and it streams as narrated audio in a persistent in-chat player, rather than waiting on a full file to render before playback starts.
+
+**A cross-chat Assistant.** Every other feature here works inside one conversation. This one deliberately doesn't: `@assistant` reasons across all of your chats at once — surfacing unfinished threads, synthesizing several conversations into a downloadable artifact, drafting a follow-up Codex prompt — with cited sources back to the specific chats it drew from, so its answers are checkable rather than asserted.
+
+|  |  |
+|---|---|
+| ![Landing page, light theme](docs/screenshots/home-light.png) | ![Unified chat, dark theme](docs/screenshots/chat-dark.png) |
+| Landing, light | Chat, dark |
+
+## How it's built
+
+Next.js 16 (App Router) and TypeScript throughout. Every model call goes through the OpenAI Responses API — conversation chaining via `previous_response_id`, structured outputs for classification and Smart Stacks, and SSE token streaming for the chat itself. One model, `gpt-5.4-mini`, handles every task in the app; the differentiation is per-task reasoning effort (chat runs medium, background classification runs low), not a fleet of different models. Voice uses `gpt-4o-mini-tts`. Storage is Redis (Upstash or Vercel KV, whichever env pair is set) with an in-memory and browser-session fallback, so a missing database degrades the demo rather than breaking it. The hosted demo rate-limits per anonymous session.
+
+A few things are deliberately out of scope for a demo, not accidentally missing: Codex's "Create PR" is simulated end-to-end (no GitHub API call), identity is an anonymous cookie rather than an account system, and the Codex workspace is a mock file tree rather than a real repository. Each of those is a scope line drawn on purpose — the interface pattern is the thing being tested, not the backend it would eventually need.
+
+## Run it locally
+
 ```bash
+git clone https://github.com/soltraveler-sri/Improved_LLM_Chat_Demo.git
+cd Improved_LLM_Chat_Demo
 npm install
-```
-
-2. Copy the environment template and add your OpenAI API key:
-```bash
-cp .env.example .env.local
-```
-
-3. Run the development server:
-```bash
+cp .env.example .env.local   # add OPENAI_API_KEY
 npm run dev
 ```
 
-4. Open [http://localhost:3000](http://localhost:3000)
+Open `http://localhost:3000`. Storage and models both have working defaults — Redis is optional locally (the app runs on an in-memory store), and every model is optional to override (see `.env.example` for the full list).
 
-## Environment Variables
+For a hosted deployment, add one Redis env pair (Upstash or Vercel KV naming both work) so history survives serverless cold starts — see `.env.example` for the exact variables.
 
-### Required
+## Design
 
-| Variable | Description |
-|----------|-------------|
-| `OPENAI_API_KEY` | Your OpenAI API key ([get one here](https://platform.openai.com/api-keys)) |
+The visual identity is called Interlace, and it isn't a decoration on top of the product — it's the same idea as the product, expressed as color and type. The app's own vocabulary is thread, branch, merge; the design system inherits that vocabulary rather than illustrating it. Two themes exist because both were designed with intent, not because dark mode is expected: a warm-linen light theme and a warm-charcoal dark theme (deliberately not the default blue-gray), with one terracotta accent reserved for context-event moments — a branch merging, a document attaching, a search result surfacing.
 
-### Model Configuration
+---
 
-The app uses different models for different request types (chat, summarization, intent classification, Assistant artifact generation, code generation, etc.). Defaults are `gpt-5-mini` for chat/search/Assistant, `gpt-5-nano` for lightweight tasks like summarization and classification, and `gpt-5.1-codex-mini` for code generation. Assistant quality can be tuned independently with `OPENAI_MODEL_ASSISTANT`, `OPENAI_ASSISTANT_REASONING`, and `OPENAI_ASSISTANT_VERBOSITY`. See [`.env.example`](.env.example) for the complete reference with defaults and explanations.
+Standalone, single-feature versions of each idea live at `/demos/branches`, `/demos/history`, and `/demos/codex`, if you want to see one in isolation before seeing it woven in. Detailed walkthroughs for all of these, including exact UI copy, are in [`docs/demo-guide.md`](docs/demo-guide.md).
 
-### Storage
-
-The app supports two Redis env var patterns for production persistence:
-
-| Option | Env Vars |
-|--------|----------|
-| **Upstash Redis** (preferred) | `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN` |
-| **Vercel KV style** | `KV_REST_API_URL`, `KV_REST_API_TOKEN` |
-
-You only need one pair. The app detects whichever is available (Upstash checked first).
-
-**Local Development:** Leave all storage variables blank. The app uses an in-memory store (data is lost on restart, but that's fine for development).
-
-**Production:** Redis is recommended for reliable persistence. Without it, the app falls back to in-memory storage and displays a warning banner.
-
-**Storage Details:**
-- **Resilient fallback:** The app never fails due to missing Redis -- it falls back gracefully with a UI warning
-- **TTL:** All data expires after 7 days to prevent unbounded growth
-- **Namespacing:** Keys are prefixed with user ID (`u:{demo_uid}:...`)
-- **Identity:** Users are identified by a `demo_uid` cookie (no accounts needed)
-- **Status endpoint:** `GET /api/storage` returns current storage status and pings Redis when configured
-- **Heartbeat:** Vercel Cron calls `GET /api/internal/redis-heartbeat` once per day and performs a single Redis `SET` to keep free/low-traffic demo databases active
-
-If a Vercel/Upstash database has been archived or uninstalled due to inactivity, follow [Database Recovery and Heartbeat Setup](docs/database-recovery.md).
-
-## API Routes
-
-### Chat (core)
-
-| Method | Route | Description |
-|--------|-------|-------------|
-| POST | `/api/respond` | Send a message and get an OpenAI Responses API reply |
-| POST | `/api/summarize` | Summarize branch messages into bullet points |
-
-### History & Search
-
-| Method | Route | Description |
-|--------|-------|-------------|
-| GET | `/api/chats` | List all chat threads (metadata) |
-| POST | `/api/chats` | Create a new chat thread |
-| GET | `/api/chats/[id]` | Get a thread with full messages |
-| PATCH | `/api/chats/[id]` | Update thread metadata |
-| DELETE | `/api/chats/[id]` | Delete a thread |
-| POST | `/api/chats/[id]/messages` | Append a message to a thread |
-| GET | `/api/chats/[id]/summary` | Generate an on-demand thread summary |
-| POST | `/api/chats/intent` | Classify user intent (chat-retrieval vs. normal) |
-| POST | `/api/chats/find` | Semantic search + LLM rerank across chats |
-
-### Smart Stacks
-
-| Method | Route | Description |
-|--------|-------|-------------|
-| GET | `/api/stacks/meta` | Get stacks metadata and category counts |
-| POST | `/api/stacks/meta` | Update stacks metadata |
-| POST | `/api/stacks/refresh` | Re-categorize all chats via LLM |
-
-### Codex
-
-| Method | Route | Description |
-|--------|-------|-------------|
-| GET | `/api/codex/tasks` | List all codex tasks |
-| POST | `/api/codex/tasks` | Create a new codex task |
-| GET | `/api/codex/tasks/[id]` | Get a task with full details |
-| POST | `/api/codex/tasks/[id]/apply` | Apply task changes to workspace |
-| POST | `/api/codex/tasks/[id]/pr` | Create a PR from task changes |
-| GET | `/api/codex/workspace` | Get current workspace snapshot |
-
-### Infrastructure
-
-| Method | Route | Description |
-|--------|-------|-------------|
-| GET | `/api/storage` | Storage status (type, configured, warnings) |
-| GET | `/api/health` | Redis connectivity diagnostics |
-| GET | `/api/internal/redis-heartbeat` | Protected Vercel Cron endpoint that writes a daily heartbeat key |
-
-## Demo Scripts
-
-### Branch Overlay Demo
-
-Follow these steps to demonstrate the branch overlay feature with context merging:
-
-#### 1. Create a branch and establish a secret
-
-1. Start a conversation: "Tell me about yourself"
-2. After the assistant responds, hover over the response and click the **branch icon** (appears on the right)
-3. In the side thread, tell the assistant a secret: "The password is 'banana123'"
-4. The assistant will acknowledge the secret in the branch
-
-#### 2. Test context isolation
-
-1. **Close the branch** with "Include in main context" toggle **OFF** (default)
-2. Notice the toast: "Branch kept separate"
-3. In the **main chat**, ask: "What's the password?"
-4. The assistant **won't know** -- the branch context is isolated!
-
-#### 3. Merge branch into main (summary mode)
-
-1. Click the branch chip to reopen the side thread
-2. Toggle **ON** "Include in main context"
-3. (Optional) Click the **...** menu to see advanced options -- "Include as summary" is default
-4. Close the branch
-5. Notice:
-   - A **context card** appears in main chat with the summary
-   - Toast: "Branch merged into main (summary)"
-   - The branch chip turns **green** with a merge icon
-
-#### 4. Verify merged context works
-
-1. In the **main chat**, ask: "What's the password?"
-2. The assistant **now knows** -- it can access the merged context!
-
-#### 5. Full transcript merge (advanced)
-
-1. Create another branch from any assistant message
-2. Have a conversation in the branch
-3. Toggle ON "Include in main context"
-4. Click **...** → "Include full transcript"
-5. Close the branch
-6. The full conversation is merged (visible in context card)
-
-#### Key Features Demonstrated
-
-- **Context isolation**: Branches don't affect main until merged
-- **Summary injection**: Concise 3-5 bullet summary merged by default
-- **Full merge**: Advanced option for complete transcript injection
-- **Visual feedback**: Green chips, merge icons, context cards, toasts
-- **Chain integrity**: Response IDs properly chained through OpenAI Responses API
-
-### History Demo
-
-Follow these steps to demonstrate persistent chat history, Smart Stacks categorization, and the AI-powered chat finder:
-
-#### 1. Create a few conversations
-
-1. Navigate to `/demos/history` and click the **+** button in the sidebar to start a new chat
-2. Have a short conversation about travel planning: "Help me plan a weekend trip to Austin"
-3. Click **+** again and start a coding conversation: "How do I set up a Python virtual environment?"
-4. Create one more about work: "Draft a quick email declining a meeting politely"
-5. Each chat is automatically saved with a title and summary
-
-#### 2. Browse and categorize with Smart Stacks
-
-1. In the sidebar, switch to **Browse** mode (click the layers icon)
-2. Click **Refresh Stacks** -- the app sends all chats to the LLM for categorization
-3. Categories appear in the sidebar (Travel, Coding, Professional, etc.) with counts
-4. Click a category to filter the chat list
-5. Use the search bar at the top to filter further within a category
-
-#### 3. Find a conversation with the Chat Finder
-
-1. Switch to **Finder** mode (click the search icon in the sidebar)
-2. Type a natural language query: "find my conversation about Python"
-3. The system detects retrieval intent, searches across all chats, and returns ranked results
-4. Each result shows:
-   - Chat title and summary
-   - **Why it matched** (LLM-generated explanation)
-   - **Confidence score** (green = high match, blue = good match, gray = possible)
-5. Click **Open** on a result to preview the full transcript
-6. If only one high-confidence result is found, it auto-opens
-
-#### 4. Use the /find shortcut
-
-1. Type `/find email about meeting` to skip intent detection and search directly
-2. Results appear the same way -- this is handy when you know you're searching
-
-#### 5. Continue a conversation with attached context
-
-1. Click **+** to start a new chat
-2. In the composer, click the **+** button to open the chat picker
-3. Search for and select a previous conversation to attach as context
-4. Ask a follow-up question -- the attached chat's summary is included as context
-5. The assistant can reference information from the attached conversation
-
-#### Key Features Demonstrated
-
-- **Persistent threads**: Conversations survive page reloads (stored in Redis or in-memory)
-- **Smart Stacks**: LLM-powered auto-categorization with 7 categories
-- **Chat Finder**: Natural language search with intent detection, semantic matching, and confidence scores
-- **Context attachment**: Pull past conversations into new chats as context
-- **Two browse modes**: Finder (search-first) and Browse (category-first)
-
-### Codex Demo
-
-Follow these steps to demonstrate AI-powered code generation with workspace integration:
-
-#### 1. Submit a coding task
-
-1. Navigate to `/demos/codex`
-2. In the chat input, type: `@codex add a health check endpoint that returns server uptime`
-3. Press Enter -- a task card appears immediately in the chat
-
-#### 2. Watch task progress
-
-1. The task card shows a progress bar with animated stages:
-   - "Analyzing your request..." → "Drafting code changes..." → "Finalizing..."
-2. Animated log lines scroll beneath the progress bar (parsing, generating, validating)
-3. A timer shows elapsed time
-4. Progress completes in roughly 30 seconds
-
-#### 3. Review the generated code
-
-1. When the status changes to **"Ready to Apply"** (amber badge), click the task card to expand it
-2. The expanded view shows:
-   - **Left panel**: The prompt, execution plan, and list of affected files
-   - **Right panel**: Unified diff preview for the selected file
-3. Click different files to review each diff
-
-#### 4. Apply changes and view workspace
-
-1. Click the **"Workspace"** button in the header to open the workspace panel
-2. Click **"Apply"** on the task card -- changes are applied to the workspace
-3. The workspace panel updates to show modified file contents
-4. Status changes to **"Applied"** (green badge)
-
-#### 5. Create a PR
-
-1. Click **"Create PR"** on the applied task
-2. Status changes to **"PR Created"** (purple badge) with a **"View PR"** link
-3. You can also click the copy icon to copy the unified diff to clipboard
-
-#### 6. Chat about the task
-
-1. After the task completes, type a normal message (without `@codex`): "Can you explain what the health check endpoint does?"
-2. The assistant responds with knowledge of the task -- completed tasks are automatically ingested into the chat context
-3. Submit another task: `@codex add unit tests for the health check endpoint`
-4. The new task builds on the context of the previous one
-
-#### Key Features Demonstrated
-
-- **@codex command**: Natural language task submission via chat
-- **Progress visualization**: Animated progress bar, status phases, and log simulation
-- **Code review UX**: Expandable task cards with file list and diff preview
-- **Apply/PR workflow**: One-click apply to workspace, one-click PR creation
-- **Context continuity**: Chat learns from completed tasks for follow-up questions
-- **Workspace panel**: Live view of all project files and their contents
-
-## Deployment
-
-This app is Vercel-ready. Just connect your repository and add the environment variables.
+MIT licensed. See [`LICENSE`](LICENSE).
