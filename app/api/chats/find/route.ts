@@ -202,12 +202,12 @@ Your task:
    - confidence: score from 0 to 1 (only include if >= 0.6)
    - why: one short sentence explaining the match
 
-IMPORTANT - Be highly selective:
-- confidence >= 0.85: Strong, clear match to the query
-- confidence 0.6-0.84: Good match with relevant content
-- confidence < 0.6: Do NOT include these results
+IMPORTANT - Calibrate confidence honestly rather than clustering at the extremes:
+- confidence >= 0.85 ("high"): the title/summary/messages directly state the query's specific subject — every meaningful qualifier in the query (place, topic, activity, format) is satisfied.
+- confidence 0.6-0.84 ("good"): the chat clearly shares the query's topic but misses or only partially satisfies a qualifier (e.g. right country but different city or purpose, right domain but different focus). INCLUDE these — surfacing a correctly-ranked near-miss under the best match helps the user confirm the top result is right.
+- confidence < 0.6: unrelated or only superficially connected. Do NOT include.
 
-Return empty results array if no chats clearly match. Do not include weak or tangential matches.`
+Return an empty results array if nothing clears 0.6. Never inflate a partial match into the high band.`
 }
 
 // ---------------------------------------------------------------------------
