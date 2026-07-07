@@ -447,9 +447,15 @@ export function BranchSurface({
             <p className="font-display text-lg text-foreground/80">
               A fresh side thread
             </p>
-            <p className="mt-2 max-w-[260px] text-xs leading-relaxed text-muted-foreground">
+            <p className="mt-2 max-w-[280px] text-xs leading-relaxed text-muted-foreground">
               Explore here without touching the main conversation — it can be
               woven back in when you&rsquo;re done.
+            </p>
+            <p className="mt-3 max-w-[280px] text-xs leading-relaxed text-muted-foreground/70">
+              Try it: tell this branch a secret, close it with the context pill
+              set to{" "}
+              <span className="font-medium text-success">including</span>, then
+              ask the main chat about the secret.
             </p>
           </div>
         ) : (

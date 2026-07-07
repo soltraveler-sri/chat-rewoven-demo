@@ -57,7 +57,7 @@ const ROWS: Array<{
   {
     key: "doc_audio",
     action: "doc",
-    name: "Hear a document",
+    name: "Listen to a document",
     whisper: "Attach the sample essay and read it aloud.",
     icon: FileAudio,
   },
@@ -206,7 +206,7 @@ export function LooseThreadsRail({
                 <button
                   key={row.key}
                   type="button"
-                  onClick={() => onStage(row.action)}
+                  onClick={() => { setIsOpen(false); onStage(row.action) }}
                   className={cn(
                     "group flex w-full items-start gap-3 rounded-lg px-3 py-2.5 text-left transition-colors",
                     "border border-transparent hover:border-thread/30 hover:bg-accent-soft/35 focus:outline-none focus:ring-2 focus:ring-ring/30"

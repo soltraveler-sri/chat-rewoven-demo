@@ -2,7 +2,6 @@
 
 import { GitBranch, GitMerge } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { Button } from "@/components/ui/button"
 import {
   Tooltip,
   TooltipContent,
@@ -99,33 +98,31 @@ export function ChatMessageBubble({
             />
           )}
 
-          {/* Branch button for assistant messages */}
-          {isAssistant && message.responseId && (
-            <div className="absolute -right-1 top-1/2 -translate-y-1/2 translate-x-full opacity-0 group-hover:opacity-100 transition-opacity">
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-7 w-7 text-muted-foreground hover:text-primary"
-                    onClick={handleBranch}
-                  >
-                    <GitBranch className="h-3.5 w-3.5" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent side="right">
-                  <p>Branch from here</p>
-                </TooltipContent>
-              </Tooltip>
-            </div>
-          )}
         </div>
       </div>
 
-      {/* Branch chips below assistant messages */}
-      {isAssistant && branches.length > 0 && (
-        <div className="mt-1.5 ml-1">
-          <BranchChip branches={branches} onOpenBranch={handleOpenBranch} />
+      {/* Branch affordance + existing branch chips below assistant messages.
+          Always visible — branching is a core move, not a hover secret. */}
+      {isAssistant && message.responseId && (
+        <div className="ml-1 mt-1.5 flex flex-wrap items-center gap-1.5">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                onClick={handleBranch}
+                className="inline-flex items-center gap-1.5 rounded-full border border-border/50 bg-secondary/40 px-2.5 py-1 text-[11px] font-medium text-muted-foreground transition-colors duration-200 hover:border-thread/40 hover:bg-accent-soft hover:text-primary"
+              >
+                <GitBranch className="h-3 w-3" />
+                Branch
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">
+              <p>Open a side thread from this reply</p>
+            </TooltipContent>
+          </Tooltip>
+          {branches.length > 0 && (
+            <BranchChip branches={branches} onOpenBranch={handleOpenBranch} />
+          )}
         </div>
       )}
     </div>

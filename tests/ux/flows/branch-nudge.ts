@@ -3,7 +3,9 @@ import { assertVisible, waitForApp } from "./utils"
 
 export const branchNudgeFlow: UxFlow = {
   name: "branch-nudge",
-  description: "Branch prompt card auto-submits, BranchNudge appears, and a merged branch marks the thread woven.",
+  aliases: ["branch"],
+  description:
+    "Branch prompt card carries through: auto-submits, auto-opens the branch surface, and a merged branch marks the thread woven.",
   steps: [
     {
       name: "branch-card-auto-submit",
@@ -14,25 +16,30 @@ export const branchNudgeFlow: UxFlow = {
       },
     },
     {
-      name: "branch-nudge-appears",
+      name: "branch-surface-auto-opens",
       run: async ({ page }) => {
-        await assertVisible(page.getByText(/Hover this reply/), "BranchNudge callout under the reply")
+        // The walkthrough carries the user all the way to the feature:
+        // the branch surface opens by itself after the reply settles.
+        await assertVisible(page.getByPlaceholder("Continue this side thread…"), "branch surface open")
+        await assertVisible(page.getByText("Kept separate"), "include pill (off) visible")
+        await assertVisible(page.getByText(/tell this branch a secret/i), "in-branch guidance visible")
       },
     },
     {
-      name: "open-branch",
+      name: "always-visible-branch-affordance",
       run: async ({ page }) => {
-        const reply = page.getByText(/compact Kyoto food plan/)
-        await reply.hover()
-        const branchButton = page.locator("button:has(svg.lucide-git-branch)").last()
-        await branchButton.click()
-        await assertVisible(page.getByPlaceholder("Continue this side thread…"), "branch surface open")
+        // The main chat (dimmed behind) shows a persistent Branch chip under
+        // the reply — no hover required anywhere.
+        await assertVisible(
+          page.locator("button", { hasText: "Branch" }).first(),
+          "always-visible Branch chip"
+        )
       },
     },
     {
       name: "converse-in-branch",
       run: async ({ page }) => {
-        const branchComposer = page.locator("textarea").last()
+        const branchComposer = page.getByPlaceholder("Continue this side thread…")
         await branchComposer.fill("In the branch only: the password is banana123.")
         await branchComposer.press("Enter")
         await assertVisible(

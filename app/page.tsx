@@ -12,7 +12,6 @@ import {
 import { toast } from "sonner"
 import { AssistantLauncher, AssistantTaskCard } from "@/components/assistant"
 import {
-  BranchNudge,
   BranchSurface,
   requestBranchClose,
   ChatMessageBubble,
@@ -63,7 +62,6 @@ const ASSISTANT_STARTER_PROMPT = "@assistant what did I leave unfinished this we
 const FIND_STARTER_PROMPT = "/find the chat about the telescope"
 const FIND_PREREQ_NOTICE =
   "You'll need a few chats in history first — have a couple of conversations, then try /find."
-const BRANCH_NUDGE_STORAGE_KEY = "cr:nudge:branch"
 const SAMPLE_DOCUMENT_PATH = "/samples/a-short-history-of-weaving.pdf"
 
 function UnifiedDemoContent() {
@@ -83,8 +81,6 @@ function UnifiedDemoContent() {
   >({})
   const [activeBranchId, setActiveBranchId] = useState<string | null>(null)
   const [tasks, setTasks] = useState<Record<string, CodexTask>>({})
-  const [branchNudgeTargetLocalId, setBranchNudgeTargetLocalId] = useState<string | null>(null)
-  const [branchNudgeDismissed, setBranchNudgeDismissed] = useState(false)
   const [prereqNotice, setPrereqNotice] = useState<string | null>(null)
   const [sampleDocPendingSubmit, setSampleDocPendingSubmit] = useState(false)
 
@@ -183,13 +179,6 @@ function UnifiedDemoContent() {
   const messages = state.messages as UnifiedMessage[]
   const hasMessages = state.messages.length > 0
   const hasFinderResults = finder.finderOptions.length > 0
-
-  useEffect(() => {
-    if (typeof window === "undefined") return
-    setBranchNudgeDismissed(
-      window.localStorage.getItem(BRANCH_NUDGE_STORAGE_KEY) === "1"
-    )
-  }, [])
 
   useEffect(() => {
     if (isLoadingThreads || typeof window === "undefined") return
@@ -362,13 +351,11 @@ function UnifiedDemoContent() {
 
         if (branchNudgeArmedRef.current) {
           branchNudgeArmedRef.current = false
-          if (
-            typeof window !== "undefined" &&
-            window.localStorage.getItem(BRANCH_NUDGE_STORAGE_KEY) !== "1"
-          ) {
-            setBranchNudgeTargetLocalId(assistantMessage.localId)
-            setBranchNudgeDismissed(false)
-          }
+          // Carry the walkthrough all the way to the feature: give the reply
+          // a beat to settle, then open a branch from it.
+          window.setTimeout(() => {
+            branches.handleBranch(assistantMessage.localId, responseData.id)
+          }, 700)
         }
 
         lastResponseIdRef.current = responseData.id
@@ -568,20 +555,11 @@ function UnifiedDemoContent() {
     setPrereqNotice(FIND_PREREQ_NOTICE)
   }, [])
 
-  const dismissBranchNudge = useCallback(() => {
-    if (typeof window !== "undefined") {
-      window.localStorage.setItem(BRANCH_NUDGE_STORAGE_KEY, "1")
-    }
-    setBranchNudgeDismissed(true)
-    setBranchNudgeTargetLocalId(null)
-  }, [])
-
   const handleBranchFromMessage = useCallback(
     (localId: string, responseId: string) => {
-      dismissBranchNudge()
       branches.handleBranch(localId, responseId)
     },
-    [branches, dismissBranchNudge]
+    [branches]
   )
 
   const stagePromptSubmit = useCallback((prompt: string) => {
@@ -664,13 +642,11 @@ function UnifiedDemoContent() {
         const latestAssistantReply = [...messages]
           .reverse()
           .find((message) => message.role === "assistant" && message.responseId)
-        if (
-          latestAssistantReply &&
-          typeof window !== "undefined" &&
-          window.localStorage.getItem(BRANCH_NUDGE_STORAGE_KEY) !== "1"
-        ) {
-          setBranchNudgeTargetLocalId(latestAssistantReply.localId)
-          setBranchNudgeDismissed(false)
+        if (latestAssistantReply?.responseId) {
+          branches.handleBranch(
+            latestAssistantReply.localId,
+            latestAssistantReply.responseId
+          )
           return
         }
         stageBranchStarter()
@@ -691,6 +667,7 @@ function UnifiedDemoContent() {
       stageAssistantStarter()
     },
     [
+      branches,
       messages,
       stageAssistantStarter,
       stageBranchStarter,
@@ -840,10 +817,6 @@ function UnifiedDemoContent() {
                         audioStreamConfig={docRead.ttsStreamConfigRef.current.get(message.localId)}
                         onAudioPlaybackStart={docRead.handleAudioPlaybackStart}
                       />
-                      {!branchNudgeDismissed &&
-                        branchNudgeTargetLocalId === message.localId && (
-                          <BranchNudge onDismiss={dismissBranchNudge} />
-                        )}
                     </div>
                   )
                 })}
