@@ -2,8 +2,6 @@
 
 *A working concept for the next iteration of the ChatGPT interface — branching, history, code tasks, documents, and an assistant, woven into one chat.*
 
-A demo, not a product. The point is the argument it makes about interface design.
-
 ![A side branch open next to the main conversation](docs/screenshots/branch-panel.png)
 *A branch: a side conversation that lives next to the thread it forked from — and can rejoin it.*
 
