@@ -48,7 +48,6 @@ import type {
 } from "@/lib/store/types"
 import { STORED_CHAT_CATEGORIES, CATEGORY_LABELS } from "@/lib/store/types"
 import { SessionChatCache } from "@/lib/session-cache"
-import { logAuditClient } from "@/lib/telemetry"
 
 // Icon mapping for categories
 const CATEGORY_ICON_MAP: Record<StoredChatCategory, React.ReactNode> = {
@@ -218,12 +217,6 @@ function HistoryDemoContent() {
       ).length
       if (localOnlyCount > 0) {
         SessionChatCache.trackEvent("mergeLocalOnlyCount", localOnlyCount)
-        logAuditClient("5.9", "history_thread_merge", {
-          serverCount: serverThreads.length,
-          localCount: localThreads.length,
-          mergedCount: merged.length,
-          localOnlyCount,
-        })
       }
 
       if (metaRes.ok) {
@@ -262,29 +255,18 @@ function HistoryDemoContent() {
         } else {
           // Server returned error — fall back to session cache
           const cached = SessionChatCache.getThread(currentChatId)
-          if (cached) {
-            setSelectedThread(cached)
-            SessionChatCache.trackEvent("threadCacheFallbacks")
-            logAuditClient("5.9", "thread_load_cache_fallback", {
-              threadId: currentChatId.slice(0, 8),
-              reason: "server_error",
-              httpStatus: res.status,
-              cachedMessageCount: cached.messages.length,
-            })
-          }
+        if (cached) {
+          setSelectedThread(cached)
+          SessionChatCache.trackEvent("threadCacheFallbacks")
         }
-      } catch (error) {
+      }
+    } catch (error) {
         console.error("Failed to fetch thread:", error)
         // Network error — fall back to session cache
         const cached = SessionChatCache.getThread(currentChatId)
         if (cached) {
           setSelectedThread(cached)
           SessionChatCache.trackEvent("threadCacheFallbacks")
-          logAuditClient("5.9", "thread_load_cache_fallback", {
-            threadId: currentChatId.slice(0, 8),
-            reason: "network_error",
-            cachedMessageCount: cached.messages.length,
-          })
         }
       } finally {
         setIsLoadingThread(false)

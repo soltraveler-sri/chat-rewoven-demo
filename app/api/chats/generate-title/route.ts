@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createSummarizeResponse, extractTextOutput, getConfigInfo } from "@/lib/openai"
+import { enforceRateLimit } from "@/lib/rate-limit"
 
 export const runtime = "nodejs"
 
@@ -40,6 +41,9 @@ function cleanGeneratedTitle(title: string, fallback: string): string {
 }
 
 export async function POST(request: NextRequest) {
+  const limited = await enforceRateLimit(request, "model")
+  if (limited) return limited
+
   let fallbackTitle = "New Chat"
 
   try {
@@ -56,7 +60,7 @@ export async function POST(request: NextRequest) {
     const transcript = `User: ${body.userMessage}\nAssistant: ${body.assistantMessage}`
     const prompt = `${TITLE_PROMPT}\n\n${transcript}`
 
-    // Use the lightweight summarize model (gpt-5-nano) — fast and cheap
+    // Uses the lightweight "summarize" request kind — fast and cheap
     const config = getConfigInfo("summarize")
     if (process.env.NODE_ENV === "development") {
       console.log(`[GenerateTitle] Using model: ${config.model}`)

@@ -141,7 +141,7 @@ export class CodexCloudTaskRunner implements TaskRunner {
     // const job = await codex.tasks.create({
     //   prompt: args.prompt,
     //   workspaceFiles: args.workspace.files,
-    //   model: process.env.OPENAI_MODEL_CODEX || "gpt-5.1-codex-mini",
+    //   model: process.env.OPENAI_MODEL_CODEX || "gpt-5.4-mini",
     // });
     // return this.pollForCompletion(job.id);
 
@@ -292,7 +292,7 @@ export class CodexCloudTaskRunner implements TaskRunner {
  * Environment variables needed for production:
  *
  * CODEX_API_KEY - API key for Codex Cloud
- * OPENAI_MODEL_CODEX - Model to use (e.g., "gpt-5.1-codex-mini")
+ * OPENAI_MODEL_CODEX - Model to use (e.g., "gpt-5.4-mini")
  * GITHUB_CLIENT_ID - GitHub OAuth app client ID
  * GITHUB_CLIENT_SECRET - GitHub OAuth app client secret
  *

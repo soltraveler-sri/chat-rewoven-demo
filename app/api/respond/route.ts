@@ -1,7 +1,9 @@
+import { enforceRateLimit } from "@/lib/rate-limit"
 import { NextRequest, NextResponse } from "next/server"
 import OpenAI from "openai"
 import {
   createTextResponse,
+  createTextResponseStream,
   extractTextOutput,
   formatOpenAIError,
   getConfigInfo,
@@ -26,9 +28,36 @@ interface RespondRequest {
   input: string
   previous_response_id?: string | null
   mode?: "fast" | "deep"
+  stream?: boolean
+}
+
+function isPreviousResponseNotFound(error: unknown): boolean {
+  if (error instanceof OpenAI.APIError) {
+    return (
+      error.code === "previous_response_not_found" ||
+      error.message?.includes("previous_response_not_found")
+    )
+  }
+
+  if (typeof error === "object" && error !== null) {
+    const maybeError = error as { code?: string | null; message?: string | null }
+    return (
+      maybeError.code === "previous_response_not_found" ||
+      maybeError.message?.includes("previous_response_not_found") === true
+    )
+  }
+
+  return false
+}
+
+function toSSEFrame(payload: unknown): string {
+  return `data: ${JSON.stringify(payload)}\n\n`
 }
 
 export async function POST(request: NextRequest) {
+  const limited = await enforceRateLimit(request, "model")
+  if (limited) return limited
+
   let kind: RequestKind = "chat_deep"
 
   try {
@@ -48,6 +77,99 @@ export async function POST(request: NextRequest) {
     const config = getConfigInfo(kind)
     console.log(`[Respond] Using ${kind} mode:`, config)
     console.log(`[Respond] Input length: ${body.input.length} chars, hasPreviousResponseId: ${!!body.previous_response_id}`)
+
+    if (body.stream === true) {
+      const encoder = new TextEncoder()
+
+      const stream = new ReadableStream<Uint8Array>({
+        async start(controller) {
+          let fullOutput = ""
+
+          const send = (payload: unknown) => {
+            controller.enqueue(encoder.encode(toSSEFrame(payload)))
+          }
+
+          try {
+            const responseStream = await createTextResponseStream({
+              kind,
+              input: [{ role: "user", content: body.input }],
+              previousResponseId: body.previous_response_id,
+              instructions: SYSTEM_INSTRUCTIONS,
+            })
+
+            for await (const event of responseStream) {
+              if (event.type === "response.output_text.delta") {
+                fullOutput += event.delta
+                send({ type: "delta", text: event.delta })
+                continue
+              }
+
+              if (event.type === "response.completed") {
+                const outputText = extractTextOutput(event.response) || fullOutput
+                send({
+                  type: "done",
+                  id: event.response.id,
+                  output_text: outputText,
+                })
+                break
+              }
+
+              if (event.type === "error") {
+                if (isPreviousResponseNotFound(event)) {
+                  send({
+                    type: "error",
+                    code: "chain_broken",
+                    message: "The conversation chain has expired or was not found.",
+                  })
+                } else {
+                  send({
+                    type: "error",
+                    code: event.code ?? undefined,
+                    message: event.message,
+                  })
+                }
+                break
+              }
+
+              if (event.type === "response.failed" || event.type === "response.incomplete") {
+                send({
+                  type: "error",
+                  message: `Response ${event.response.status}`,
+                })
+                break
+              }
+            }
+          } catch (error) {
+            console.error("Streaming API error:", error)
+
+            if (isPreviousResponseNotFound(error)) {
+              send({
+                type: "error",
+                code: "chain_broken",
+                message: "The conversation chain has expired or was not found.",
+              })
+            } else {
+              const errorResponse = formatOpenAIError(error, kind)
+              send({
+                type: "error",
+                message: errorResponse.error,
+                details: errorResponse.details,
+              })
+            }
+          } finally {
+            controller.close()
+          }
+        },
+      })
+
+      return new Response(stream, {
+        headers: {
+          "Content-Type": "text/event-stream; charset=utf-8",
+          "Cache-Control": "no-cache, no-transform",
+          Connection: "keep-alive",
+        },
+      })
+    }
 
     // Use centralized client for the request
     const response = await createTextResponse({
@@ -78,26 +200,19 @@ export async function POST(request: NextRequest) {
     console.error("API error:", error)
 
     // Check for previous_response_not_found error - return 409 with recovery info
-    if (error instanceof OpenAI.APIError) {
-      // The error code can be in error.code or in the error message
-      const isPreviousResponseNotFound =
-        error.code === "previous_response_not_found" ||
-        error.message?.includes("previous_response_not_found")
-
-      if (isPreviousResponseNotFound) {
-        console.warn(
-          "[Respond] Chain broken: previous_response_id not found. " +
-          "Client should retry without previous_response_id."
-        )
-        return NextResponse.json(
-          {
-            code: "chain_broken",
-            message: "The conversation chain has expired or was not found.",
-            suggestion: "start_new_thread",
-          },
-          { status: 409 }
-        )
-      }
+    if (isPreviousResponseNotFound(error)) {
+      console.warn(
+        "[Respond] Chain broken: previous_response_id not found. " +
+        "Client should retry without previous_response_id."
+      )
+      return NextResponse.json(
+        {
+          code: "chain_broken",
+          message: "The conversation chain has expired or was not found.",
+          suggestion: "start_new_thread",
+        },
+        { status: 409 }
+      )
     }
 
     const errorResponse = formatOpenAIError(error, kind)

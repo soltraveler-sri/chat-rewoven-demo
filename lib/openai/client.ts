@@ -14,6 +14,7 @@
  */
 
 import OpenAI from "openai"
+import type { Stream } from "openai/core/streaming"
 import { z } from "zod"
 import { zodTextFormat } from "openai/helpers/zod"
 
@@ -28,13 +29,13 @@ import { zodTextFormat } from "openai/helpers/zod"
  */
 export type RequestKind =
   | "chat_fast" // Fast chat responses (reasoning: low)
-  | "chat_deep" // Deep chat responses (reasoning: low)
-  | "summarize" // Summarization tasks (gpt-5-nano, reasoning: low)
-  | "intent" // Intent classification (gpt-5-nano, reasoning: low)
-  | "stacks" // Smart Stacks categorization (gpt-5-nano, reasoning: low)
-  | "finder" // Chat finder reranking (gpt-5-mini, reasoning: low)
-  | "codex" // Codex tasks (gpt-5.1-codex-mini, reasoning: low)
-  | "assistant" // Product-level Assistant tasks (gpt-5-mini, reasoning: low)
+  | "chat_deep" // Deep chat responses (reasoning: medium)
+  | "summarize" // Summarization tasks (reasoning: low)
+  | "intent" // Intent classification (reasoning: low)
+  | "stacks" // Smart Stacks categorization (reasoning: low)
+  | "finder" // Chat finder reranking (reasoning: low)
+  | "codex" // Codex tasks (reasoning: medium)
+  | "assistant" // Product-level Assistant tasks (reasoning: medium)
 
 /**
  * Request kinds that use previous_response_id chaining.
@@ -48,17 +49,23 @@ const CHAINED_KINDS: Set<RequestKind> = new Set(["chat_fast", "chat_deep"])
 
 /**
  * Default models for each request kind
+ *
+ * The whole demo runs on one model (gpt-5.4-mini) with per-task reasoning
+ * effort doing the differentiation. This keeps local setup to a single
+ * OPENAI_API_KEY and guarantees previous_response_id chaining works.
  * Note: chat_fast and chat_deep share the same model via getChainedChatModel()
  */
+const DEFAULT_CHAT_MODEL = "gpt-5.4-mini"
+
 const DEFAULT_MODELS: Record<RequestKind, string> = {
-  chat_fast: "gpt-5-mini", // Both chat kinds use the same model for chaining
-  chat_deep: "gpt-5-mini", // Both chat kinds use the same model for chaining
-  summarize: "gpt-5-nano",
-  intent: "gpt-5-nano",
-  stacks: "gpt-5-nano",
-  finder: "gpt-5-mini",
-  codex: "gpt-5.1-codex-mini",
-  assistant: "gpt-5-mini",
+  chat_fast: DEFAULT_CHAT_MODEL, // Both chat kinds use the same model for chaining
+  chat_deep: DEFAULT_CHAT_MODEL, // Both chat kinds use the same model for chaining
+  summarize: DEFAULT_CHAT_MODEL,
+  intent: DEFAULT_CHAT_MODEL,
+  stacks: DEFAULT_CHAT_MODEL,
+  finder: DEFAULT_CHAT_MODEL,
+  codex: DEFAULT_CHAT_MODEL,
+  assistant: DEFAULT_CHAT_MODEL,
 }
 
 /**
@@ -89,7 +96,7 @@ let chainedModelWarningLogged = false
  * 1. OPENAI_MODEL_CHAT (explicit unified override)
  * 2. OPENAI_MODEL_DEEP (prefer the "deep" model for quality)
  * 3. OPENAI_MODEL_FAST (fallback)
- * 4. Default: gpt-5-mini
+ * 4. Default: gpt-5.4-mini
  */
 export function getChainedChatModel(): string {
   // Priority 1: Explicit unified chat model
@@ -125,7 +132,7 @@ export function getChainedChatModel(): string {
   }
 
   // Default
-  return DEFAULT_MODELS.chat_deep
+  return DEFAULT_CHAT_MODEL
 }
 
 type ReasoningEffort = "none" | "minimal" | "low" | "medium" | "high" | "xhigh"
@@ -140,13 +147,13 @@ type TextVerbosity = "low" | "medium" | "high"
  */
 const REASONING_EFFORT: Record<RequestKind, ReasoningEffort> = {
   chat_fast: "low",
-  chat_deep: "low",
+  chat_deep: "medium",
   summarize: "low",
   intent: "low",
   stacks: "low",
   finder: "low",
-  codex: "low",
-  assistant: "low",
+  codex: "medium",
+  assistant: "medium",
 }
 
 /**
@@ -327,6 +334,8 @@ export function getConfigInfo(kind: RequestKind): {
  * Non-streaming response create params
  */
 type NonStreamingResponseParams = OpenAI.Responses.ResponseCreateParamsNonStreaming
+type BaseResponseParams = Omit<NonStreamingResponseParams, "stream">
+type StreamingResponseParams = OpenAI.Responses.ResponseCreateParamsStreaming
 
 /**
  * Build common request parameters for a given kind
@@ -347,7 +356,7 @@ function buildCommonParams(
     reasoningEffortOverride?: ReasoningEffort
     storeOverride?: boolean
   }
-): NonStreamingResponseParams {
+): BaseResponseParams {
   const model = getModel(kind)
   const reasoning = options?.reasoningEffortOverride ?? getReasoningEffort(kind)
   const verbosity = getTextVerbosity(kind)
@@ -359,12 +368,11 @@ function buildCommonParams(
     ? options.storeOverride 
     : CHAINED_KINDS.has(kind)
 
-  const params: NonStreamingResponseParams = {
+  const params: BaseResponseParams = {
     model,
     input,
     store: shouldStore,
-    stream: false,
-    reasoning: { effort: reasoning } as NonStreamingResponseParams["reasoning"],
+    reasoning: { effort: reasoning } as BaseResponseParams["reasoning"],
     text: {
       format: { type: "text" },
       verbosity,
@@ -399,6 +407,10 @@ export async function createTextResponse(options: {
     instructions: options.instructions,
     storeOverride: options.storeOverride,
   })
+  const createParams: NonStreamingResponseParams = {
+    ...params,
+    stream: false,
+  }
 
   const config = getConfigInfo(options.kind)
   console.log(`[OpenAI:${options.kind}] Request:`, {
@@ -409,7 +421,7 @@ export async function createTextResponse(options: {
   })
 
   try {
-    const response = await client.responses.create(params, {
+    const response = await client.responses.create(createParams, {
       signal: options.abortSignal,
     })
 
@@ -420,6 +432,46 @@ export async function createTextResponse(options: {
     })
 
     return response
+  } catch (error) {
+    handleOpenAIError(error, options.kind, config)
+    throw error
+  }
+}
+
+/**
+ * Create a streaming text response request
+ */
+export async function createTextResponseStream(options: {
+  kind: RequestKind
+  input: string | OpenAI.Responses.ResponseInput
+  previousResponseId?: string | null
+  instructions?: string
+  abortSignal?: AbortSignal
+  storeOverride?: boolean
+}): Promise<Stream<OpenAI.Responses.ResponseStreamEvent>> {
+  const client = getOpenAIClient()
+  const params = buildCommonParams(options.kind, options.input, {
+    previousResponseId: options.previousResponseId,
+    instructions: options.instructions,
+    storeOverride: options.storeOverride,
+  })
+  const createParams: StreamingResponseParams = {
+    ...params,
+    stream: true,
+  }
+
+  const config = getConfigInfo(options.kind)
+  console.log(`[OpenAI:${options.kind}] Stream request:`, {
+    model: config.model,
+    reasoning: config.reasoning,
+    verbosity: config.verbosity,
+    hasPreviousResponseId: !!options.previousResponseId,
+  })
+
+  try {
+    return await client.responses.create(createParams, {
+      signal: options.abortSignal,
+    })
   } catch (error) {
     handleOpenAIError(error, options.kind, config)
     throw error
@@ -468,8 +520,12 @@ export async function createSummarizeResponse(options: {
       reasoningEffortOverride: reasoning,
       storeOverride: false, // Summarization never stores
     })
+    const createParams: NonStreamingResponseParams = {
+      ...params,
+      stream: false,
+    }
 
-    return client.responses.create(params, {
+    return client.responses.create(createParams, {
       signal: options.abortSignal,
     })
   }

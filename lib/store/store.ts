@@ -488,7 +488,6 @@ class ResilientRedisStore implements ChatStore {
     operation: string,
     redisFn: () => Promise<T>,
     fallbackFn: () => Promise<T>,
-    isWrite = false,
   ): Promise<T> {
     // If Redis is unhealthy and we shouldn't retry yet, go straight to fallback
     if (!this.shouldRetryRedis()) {
@@ -537,7 +536,6 @@ class ResilientRedisStore implements ChatStore {
         return result
       },
       () => this.fallback.createThread(demoUid, initial),
-      true,
     )
     return thread
   }
@@ -550,7 +548,6 @@ class ResilientRedisStore implements ChatStore {
         await this.mirrorRedisThreadToFallback(demoUid, threadId)
       },
       () => this.fallback.appendMessage(demoUid, threadId, message),
-      true,
     )
   }
 
@@ -562,7 +559,6 @@ class ResilientRedisStore implements ChatStore {
         await this.mirrorRedisThreadToFallback(demoUid, threadId)
       },
       () => this.fallback.updateThread(demoUid, threadId, partial),
-      true,
     )
   }
 
@@ -574,7 +570,6 @@ class ResilientRedisStore implements ChatStore {
         await this.fallback.deleteThread(demoUid, threadId)
       },
       () => this.fallback.deleteThread(demoUid, threadId),
-      true,
     )
   }
 
@@ -594,7 +589,6 @@ class ResilientRedisStore implements ChatStore {
         await this.fallback.setLastStacksRefreshAt(demoUid, ts)
       },
       () => this.fallback.setLastStacksRefreshAt(demoUid, ts),
-      true,
     )
   }
 }

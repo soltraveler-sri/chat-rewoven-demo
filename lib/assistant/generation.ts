@@ -1,5 +1,5 @@
 import { z } from "zod"
-import { makeAssistantArtifact, slugifyFilenamePart } from "@/lib/assistant/artifacts"
+import { makeAssistantArtifact, rowsToCsv, slugifyFilenamePart } from "@/lib/assistant/artifacts"
 import type { AssistantArtifact } from "@/lib/assistant/types"
 import { createParsedResponse } from "@/lib/openai"
 
@@ -51,6 +51,31 @@ const AssistantDocumentSchema = z.object({
     .describe("Facts, dates, numbers, or decisions that were not clear from the chats"),
 })
 
+const AssistantCsvRowSchema = z.object({
+  values: z
+    .array(z.string())
+    .describe("Cell values in the exact same order as headers"),
+  sourceChatId: z.string().describe("Source chat ID exactly as provided"),
+  confidence: z.number().min(0).max(1).describe("Confidence that this row is directly supported"),
+})
+
+const AssistantCsvSchema = z.object({
+  title: z.string().describe("Short descriptive table title"),
+  headers: z
+    .array(z.string())
+    .min(2)
+    .max(10)
+    .describe("Concise user-facing data columns, excluding sourceChatId and confidence"),
+  rows: z
+    .array(AssistantCsvRowSchema)
+    .max(80)
+    .describe("Rows grounded only in the provided chat transcripts"),
+  missingOrAmbiguous: z
+    .array(z.string())
+    .max(8)
+    .describe("Facts, columns, or row values that were not clear from the chats"),
+})
+
 export interface AssistantDocumentSourceInput {
   chatId: string
   title: string
@@ -64,6 +89,10 @@ export interface AssistantDocumentGenerationResult {
   artifact: AssistantArtifact
   summary: string
   missingInfo: string[]
+}
+
+interface AssistantCsvRow {
+  [key: string]: string | number
 }
 
 function truncateContext(text: string, maxChars: number): string {
@@ -221,6 +250,98 @@ Requirements:
     }
   } catch (error) {
     console.error("[Assistant] Model document generation failed, using deterministic fallback:", error)
+    return null
+  }
+}
+
+export async function generateAssistantCsvArtifact(args: {
+  request: string
+  interpretedGoal: string
+  title: string
+  sources: AssistantDocumentSourceInput[]
+}): Promise<AssistantDocumentGenerationResult | null> {
+  if (!process.env.OPENAI_API_KEY || args.sources.length === 0) {
+    return null
+  }
+
+  const context = buildContextBlock(args.sources)
+  if (!context) return null
+
+  const prompt = `Assistant request:
+${args.request}
+
+Interpreted goal:
+${args.interpretedGoal}
+
+Available chat context:
+${context}
+
+Extract a downloadable CSV table from the chat transcripts.
+Requirements:
+- Use only facts explicitly present in the provided chat context.
+- Choose headers that match the user's requested spreadsheet/table.
+- Keep one fact, item, or record per row.
+- Leave unknown cells blank instead of inferring values.
+- Include sourceChatId for every row using exactly one provided chat ID.
+- Set confidence based on how directly the row is supported.
+- Do not include rows that are only generic advice or outside knowledge.`
+
+  try {
+    const { parsed } = await createParsedResponse({
+      kind: "assistant",
+      input: prompt,
+      schema: AssistantCsvSchema,
+      schemaName: "assistant_csv_artifact",
+      instructions:
+        "You are the product-level Assistant inside a ChatGPT-like app. You extract compact CSV artifacts from provided chat context only. Never fabricate missing facts.",
+    })
+
+    if (!parsed) return null
+
+    const sourceIds = new Set(args.sources.map((source) => source.chatId))
+    const headers = [...parsed.headers, "sourceChatId", "confidence"]
+    const rows: AssistantCsvRow[] = parsed.rows
+      .filter((row) => sourceIds.has(row.sourceChatId))
+      .map((row) => {
+        const output: AssistantCsvRow = {}
+        for (const [index, header] of parsed.headers.entries()) {
+          output[header] = row.values[index] || ""
+        }
+        output.sourceChatId = row.sourceChatId
+        output.confidence = Math.round(row.confidence * 100) / 100
+        return output
+      })
+
+    if (rows.length === 0) {
+      return {
+        artifact: makeAssistantArtifact({
+          kind: "csv",
+          filename: `${slugifyFilenamePart(parsed.title || args.title)}.csv`,
+          content: rowsToCsv(headers, []),
+          rowCount: 0,
+        }),
+        summary:
+          "I reviewed the selected chats, but the model did not find any directly supported rows for the requested CSV.",
+        missingInfo:
+          parsed.missingOrAmbiguous.length > 0
+            ? parsed.missingOrAmbiguous
+            : ["No directly supported rows were found in the selected chats."],
+      }
+    }
+
+    const content = rowsToCsv(headers, rows)
+    return {
+      artifact: makeAssistantArtifact({
+        kind: "csv",
+        filename: `${slugifyFilenamePart(parsed.title || args.title)}.csv`,
+        content,
+        rowCount: rows.length,
+      }),
+      summary: `Created "${parsed.title}" with ${rows.length} row${rows.length === 1 ? "" : "s"} from ${args.sources.length} source chat${args.sources.length === 1 ? "" : "s"}.`,
+      missingInfo: parsed.missingOrAmbiguous,
+    }
+  } catch (error) {
+    console.error("[Assistant] Model CSV generation failed, using deterministic fallback:", error)
     return null
   }
 }

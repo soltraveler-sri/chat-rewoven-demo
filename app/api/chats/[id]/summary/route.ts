@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { getChatStore } from "@/lib/store"
+import { enforceRateLimit } from "@/lib/rate-limit"
 import {
   createSummarizeResponse,
   extractTextOutput,
@@ -61,6 +62,9 @@ export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const limited = await enforceRateLimit(request, "model")
+  if (limited) return limited
+
   const demoUid = getDemoUid(request)
 
   if (!demoUid) {
@@ -112,7 +116,7 @@ ${transcript}
 Summary:`
 
     // Call OpenAI to generate summary using centralized client
-    // Uses "summarize" kind: gpt-5-nano with reasoning: low (NOT "none"!)
+    // Uses the "summarize" request kind from the centralized client
     const config = getConfigInfo("summarize")
     console.log(
       `[Summary] Generating summary for chat ${id} with model ${config.model}`

@@ -136,6 +136,7 @@ function safeRemove(key: string): void {
 /** Strip messages from a full thread to produce metadata-only */
 function toMeta(thread: StoredChatThread): StoredChatThreadMeta {
   const { messages: _messages, ...meta } = thread
+  void _messages
   return meta
 }
 

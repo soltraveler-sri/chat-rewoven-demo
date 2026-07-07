@@ -3,7 +3,7 @@ import { z } from "zod"
 import { getChatStore } from "@/lib/store"
 import type { StoredChatThreadMeta } from "@/lib/store"
 import { createParsedResponse, formatOpenAIError, getConfigInfo } from "@/lib/openai"
-import { logAuditServer } from "@/lib/telemetry"
+import { enforceRateLimit } from "@/lib/rate-limit"
 
 // ---------------------------------------------------------------------------
 // POST /api/chats/find
@@ -52,8 +52,6 @@ const RerankOutputSchema = z.object({
     .describe("Top matching chats, ordered by relevance/confidence"),
 })
 
-type RerankOutput = z.infer<typeof RerankOutputSchema>
-
 // Response option type
 interface FindOption {
   chatId: string
@@ -71,7 +69,6 @@ interface FindResponse {
 
 // Defaults
 const DEFAULT_MAX_CANDIDATES = 30
-const DEFAULT_TOPK = 5
 const MAX_CANDIDATES_CAP = 60
 
 /**
@@ -173,8 +170,7 @@ function selectTopCandidatesWithSnippets(
 
 function buildRerankPrompt(
   query: string,
-  candidates: ScoredCandidateWithSnippet[],
-  topK: number
+  candidates: ScoredCandidateWithSnippet[]
 ): string {
   const candidateList = candidates
     .map((c, i) => {
@@ -227,6 +223,9 @@ function getDemoUid(request: NextRequest): string | null {
 // ---------------------------------------------------------------------------
 
 export async function POST(request: NextRequest) {
+  const limited = await enforceRateLimit(request, "model")
+  if (limited) return limited
+
   try {
     // Auth check
     const demoUid = getDemoUid(request)
@@ -253,17 +252,14 @@ export async function POST(request: NextRequest) {
 
     const { query, localThreads } = parseResult.data
 
-    // Determine maxCandidates and topK from env or request
+    // Determine maxCandidates from env or request
     const envMaxCandidates = process.env.OPENAI_CHAT_FINDER_MAX_CANDIDATES
-    const envTopK = process.env.OPENAI_CHAT_FINDER_TOPK
 
     const maxCandidates = Math.min(
       parseResult.data.maxCandidates ??
         (envMaxCandidates ? parseInt(envMaxCandidates, 10) : DEFAULT_MAX_CANDIDATES),
       MAX_CANDIDATES_CAP
     )
-
-    const topK = envTopK ? parseInt(envTopK, 10) : DEFAULT_TOPK
 
     // Step A: Load all chats, fetch message snippets, and generate candidates
     const store = getChatStore()
@@ -303,20 +299,6 @@ export async function POST(request: NextRequest) {
 
     const allChats = Array.from(chatMap.values())
 
-    // Log merge diagnostics — identifies when local threads supplement the server
-    const localOnlyIds = localThreads
-      ? localThreads.filter((lt) => !storeChats.some((sc) => sc.id === lt.id)).map((lt) => lt.id.slice(0, 8))
-      : []
-    if (localOnlyIds.length > 0 || (localThreads && localThreads.length > 0)) {
-      logAuditServer("5.9", "find_thread_merge", {
-        storeThreadCount: storeChats.length,
-        localThreadCount: localThreads?.length || 0,
-        mergedTotal: allChats.length,
-        localOnlyCount: localOnlyIds.length,
-        localOnlyIds,
-      })
-    }
-
     if (allChats.length === 0) {
       const response: FindResponse = { query, options: [] }
       return NextResponse.json(response)
@@ -346,29 +328,14 @@ export async function POST(request: NextRequest) {
 
     const scoredCandidates = selectTopCandidatesWithSnippets(allChats, query, maxCandidates, messageTexts)
 
-    logAuditServer("5.4", "find_candidate_generation", {
-      query,
-      totalChats: allChats.length,
-      chatsWithSnippets: messageTexts.size,
-      chatsWithoutSnippets: allChats.length - messageTexts.size,
-      topCandidateCount: scoredCandidates.length,
-      topCandidateScores: scoredCandidates.slice(0, 5).map((c) => ({
-        id: c.chat.id.slice(0, 8),
-        title: c.chat.title,
-        score: c.score,
-        hasSnippet: !!c.messageSnippet,
-        snippetLen: c.messageSnippet?.length || 0,
-      })),
-    })
-
     if (scoredCandidates.length === 0) {
       const response: FindResponse = { query, options: [] }
       return NextResponse.json(response)
     }
 
     // Step B: LLM rerank using centralized client
-    // Uses "finder" kind: gpt-5-mini with reasoning: low (NOT "none"!)
-    const prompt = buildRerankPrompt(query, scoredCandidates, topK)
+    // Uses the "finder" request kind from the centralized client
+    const prompt = buildRerankPrompt(query, scoredCandidates)
     const config = getConfigInfo("finder")
 
     console.log(`[POST /api/chats/find] Reranking ${scoredCandidates.length} candidates with model ${config.model}`)
@@ -425,18 +392,6 @@ export async function POST(request: NextRequest) {
     const filteredOptions = options.filter(
       (opt) => opt.confidence >= MIN_CONFIDENCE_THRESHOLD
     )
-
-    logAuditServer("5.4", "find_rerank_results", {
-      query,
-      rawResultCount: parsed.results.length,
-      filteredResultCount: filteredOptions.length,
-      results: filteredOptions.map((o) => ({
-        chatId: o.chatId.slice(0, 8),
-        title: o.title,
-        confidence: o.confidence,
-        why: o.why,
-      })),
-    })
 
     const response: FindResponse = { query, options: filteredOptions }
     return NextResponse.json(response)

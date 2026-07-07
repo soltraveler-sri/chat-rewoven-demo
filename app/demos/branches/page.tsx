@@ -19,7 +19,6 @@ import type {
   BranchThread,
   SummarizeResponse,
 } from "@/lib/types"
-import { logAuditClient } from "@/lib/telemetry"
 import { SessionChatCache } from "@/lib/session-cache"
 
 function generateId(): string {
@@ -55,11 +54,6 @@ async function createStoredThread(title?: string): Promise<string | null> {
       }
       SessionChatCache.saveThread(localThread)
       SessionChatCache.trackEvent("localOnlyThreads")
-      logAuditClient("5.9", "thread_created_local_only", {
-        threadId: localThread.id,
-        reason: "server_error",
-        httpStatus: res.status,
-      })
       return localThread.id
     }
     const data = await res.json()
@@ -81,10 +75,6 @@ async function createStoredThread(title?: string): Promise<string | null> {
     }
     SessionChatCache.saveThread(localThread)
     SessionChatCache.trackEvent("localOnlyThreads")
-    logAuditClient("5.9", "thread_created_local_only", {
-      threadId: localThread.id,
-      reason: "network_error",
-    })
     return localThread.id
   }
 }
@@ -217,13 +207,7 @@ export default function BranchesDemo() {
 
     // --- PERSISTENCE (await thread creation to prevent race) ---
     if (!storedThreadIdRef.current) {
-      const createStart = Date.now()
       const id = await createStoredThread()
-      logAuditClient("5.7", "branch_thread_create_awaited", {
-        threadId: id,
-        durationMs: Date.now() - createStart,
-        threadExistedBefore: false,
-      })
       if (id) {
         storedThreadIdRef.current = id
         persistMessage(id, {
@@ -234,11 +218,6 @@ export default function BranchesDemo() {
         })
       }
     } else {
-      logAuditClient("5.7", "branch_message_persisted", {
-        threadId: storedThreadIdRef.current,
-        messageRole: "user",
-        threadExistedBefore: true,
-      })
       persistMessage(storedThreadIdRef.current, {
         id: userMessage.localId,
         role: userMessage.role,
@@ -283,12 +262,6 @@ export default function BranchesDemo() {
       // --- PERSISTENCE (fire-and-forget, best-effort) ---
       // Persist assistant message and update lastResponseId
       if (storedThreadIdRef.current) {
-        logAuditClient("5.7", "branch_assistant_persist", {
-          threadId: storedThreadIdRef.current,
-          messageRole: "assistant",
-          threadRefAvailable: true,
-          responseId: responseData.id,
-        })
         persistMessage(storedThreadIdRef.current, {
           id: assistantMessage.localId,
           role: assistantMessage.role,
@@ -298,11 +271,6 @@ export default function BranchesDemo() {
         })
         updateStoredThread(storedThreadIdRef.current, {
           lastResponseId: responseData.id,
-        })
-      } else {
-        logAuditClient("5.7", "branch_assistant_persist_skipped", {
-          threadRefAvailable: false,
-          reason: "storedThreadIdRef still null — race condition if this fires",
         })
       }
       // --- END PERSISTENCE ---
@@ -586,18 +554,6 @@ export default function BranchesDemo() {
 
   // Reset chat state
   const handleReset = () => {
-    // Log session cache diagnostics snapshot before clearing
-    const diag = SessionChatCache.getDiagnostics()
-    const snapshot = SessionChatCache.getSnapshot()
-    const hasActivity = Object.values(diag).some((v) => v > 0)
-    if (hasActivity) {
-      logAuditClient("5.9", "session_cache_diagnostics", {
-        ...diag,
-        ...snapshot,
-        trigger: "new_chat",
-      })
-    }
-
     setState({
       messages: [],
       lastResponseId: null,

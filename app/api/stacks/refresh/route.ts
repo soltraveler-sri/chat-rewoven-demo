@@ -3,6 +3,7 @@ import { z } from "zod"
 import { getChatStore } from "@/lib/store"
 import type { StoredChatCategory, StoredChatThread } from "@/lib/store"
 import { createParsedResponse, formatOpenAIError, getConfigInfo } from "@/lib/openai"
+import { enforceRateLimit } from "@/lib/rate-limit"
 
 /**
  * Helper to get demo_uid from cookies
@@ -40,8 +41,6 @@ const ChatCategorizationSchema = z.object({
 const RefreshOutputSchema = z.object({
   chats: z.array(ChatCategorizationSchema),
 })
-
-type RefreshOutput = z.infer<typeof RefreshOutputSchema>
 
 /**
  * Build a compact transcript snippet from messages
@@ -119,6 +118,9 @@ Return a JSON object with a "chats" array containing an entry for each chat with
  * This categorizes recent chats using an LLM with structured outputs.
  */
 export async function POST(request: NextRequest) {
+  const limited = await enforceRateLimit(request, "model")
+  if (limited) return limited
+
   const demoUid = getDemoUid(request)
 
   if (!demoUid) {
@@ -204,7 +206,7 @@ export async function POST(request: NextRequest) {
     const prompt = buildCategorizationPrompt(chatPayloads)
 
     // Step 5: Call OpenAI with structured outputs using centralized client
-    // Uses "stacks" kind: gpt-5-nano with reasoning: low (NOT "none"!)
+    // Uses the "stacks" request kind from the centralized client
     const config = getConfigInfo("stacks")
     console.log(
       `[Stacks Refresh] Processing ${fullThreads.length} chats with model ${config.model}`

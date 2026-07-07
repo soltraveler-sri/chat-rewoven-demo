@@ -38,6 +38,7 @@ export {
 
   // Request builders
   createTextResponse,
+  createTextResponseStream,
   createParsedResponse,
   createSummarizeResponse,
 
