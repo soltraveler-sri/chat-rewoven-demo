@@ -58,7 +58,7 @@ import { cn } from "@/lib/utils"
 
 const BRANCH_STARTER_PROMPT = "Plan a 3-day Kyoto trip focused on food"
 const CODEX_STARTER_PROMPT = "@codex add a dark-mode toggle to the settings page"
-const ASSISTANT_STARTER_PROMPT = "@assistant what did I leave unfinished this week?"
+const ASSISTANT_STARTER_PROMPT = "@assistant can you create an itinerary for my portugal trip exactly like we did for kyoto"
 const FIND_STARTER_PROMPT = "/find the chat about the telescope"
 const FIND_PREREQ_NOTICE =
   "You'll need a few chats in history first — have a couple of conversations, then try /find."
@@ -697,7 +697,7 @@ function UnifiedDemoContent() {
 
   return (
     <TooltipProvider delayDuration={300}>
-      <div className="flex h-full">
+      <div className="relative flex h-full">
         {/* Sidebar leaves entirely while a branch is open (two clean surfaces) */}
         <div
           className={cn(
@@ -718,7 +718,7 @@ function UnifiedDemoContent() {
 
         {/* Main chat: dims to the background while the branch surface is open;
             clicking it returns to the main thread (same close semantics as ✕) */}
-        <div className="relative flex min-w-0 flex-1 flex-col">
+        <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
           {branchIsOpen && (
             <button
               type="button"
@@ -733,7 +733,7 @@ function UnifiedDemoContent() {
           )}
           <div
             className={cn(
-              "flex min-w-0 flex-1 flex-col transition-opacity duration-300",
+              "flex min-h-0 min-w-0 flex-1 flex-col transition-opacity duration-300",
               branchIsOpen && "pointer-events-none opacity-40 select-none"
             )}
             aria-hidden={branchIsOpen}
@@ -773,7 +773,7 @@ function UnifiedDemoContent() {
                 onDismissPrereqNotice={() => setPrereqNotice(null)}
               />
             ) : (
-              <div className="mx-auto w-full max-w-3xl px-4 py-6 space-y-4">
+              <div className="mx-auto w-full max-w-4xl px-4 py-6 space-y-4">
                 {messages.map((message) => {
                   if (message.isAssistantTaskCard && message.assistantTaskId) {
                     const task = assistant.assistantTasks[message.assistantTaskId]
@@ -863,7 +863,7 @@ function UnifiedDemoContent() {
 
           <div className="border-t border-border/40 bg-card/60">
             {docRead.attachedFile && (
-              <div className="mx-auto w-full max-w-3xl px-4 pt-3 pb-0">
+              <div className="mx-auto w-full max-w-4xl px-4 pt-3 pb-0">
                 <FileAttachmentChip
                   filename={docRead.attachedFile.name}
                   isProcessing={docRead.isUploadingDoc}
@@ -873,7 +873,7 @@ function UnifiedDemoContent() {
             )}
 
             {docRead.isGeneratingTTS && (
-              <div className="mx-auto w-full max-w-3xl px-4 pt-3 pb-0">
+              <div className="mx-auto w-full max-w-4xl px-4 pt-3 pb-0">
                 <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-accent-soft border-l-2 border-l-thread text-sm">
                   <Loader2 className="h-3.5 w-3.5 text-primary animate-spin" />
                   <span className="text-xs text-primary font-medium">Generating audio...</span>
@@ -881,7 +881,7 @@ function UnifiedDemoContent() {
               </div>
             )}
 
-            <div className="mx-auto flex w-full max-w-3xl items-end gap-2 p-4">
+            <div className="mx-auto flex w-full max-w-4xl items-end gap-2 p-4">
               <input
                 ref={docRead.fileInputRef}
                 type="file"

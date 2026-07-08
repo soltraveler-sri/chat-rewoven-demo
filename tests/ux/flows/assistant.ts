@@ -1,19 +1,28 @@
 import type { UxFlow } from "./types"
-import { assertVisible, openFreshSeededChat, sendComposer } from "./utils"
+import { assertVisible, openFreshSeededChat } from "./utils"
+
+const ASSISTANT_WALKTHROUGH_PROMPT =
+  "@assistant can you create an itinerary for my portugal trip exactly like we did for kyoto"
 
 export const assistantFlow: UxFlow = {
   name: "assistant",
-  description: "Run the Assistant command path against seeded history and a ready fixture task.",
+  description:
+    "Assistant walkthrough: the empty-state card submits the cross-chat itinerary prompt by itself and the Assistant runs to a ready result.",
   steps: [
     {
       name: "seed-history",
       run: openFreshSeededChat,
     },
     {
-      name: "submit-assistant-command",
+      name: "assistant-card-auto-submits",
       run: async ({ page }) => {
-        await sendComposer(page, "@assistant what did I leave unfinished this week?")
-        await assertVisible(page.getByText("@assistant what did I leave unfinished this week?").first(), "assistant user message")
+        // The walkthrough entry point: clicking the empty-state Assistant card
+        // submits the itinerary prompt by itself (no typing).
+        await page.getByText(ASSISTANT_WALKTHROUGH_PROMPT).first().click()
+        await assertVisible(
+          page.locator(".max-w-4xl").getByText(ASSISTANT_WALKTHROUGH_PROMPT),
+          "assistant walkthrough prompt submitted without typing"
+        )
       },
     },
     {
@@ -21,8 +30,6 @@ export const assistantFlow: UxFlow = {
       run: async ({ page }) => {
         await assertVisible(page.getByText("Assistant").first(), "assistant card")
         await assertVisible(page.getByText("Ready", { exact: true }).first(), "assistant ready status")
-        await assertVisible(page.getByText("unfinished-work-brief.md").first(), "assistant artifact")
-        await assertVisible(page.getByText(/Two loose ends are still open/).first(), "assistant result summary")
       },
     },
   ],

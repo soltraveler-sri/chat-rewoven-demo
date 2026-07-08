@@ -126,8 +126,8 @@ const EXAMPLE_PROMPTS: {
     action: "codex",
   },
   {
-    label: "@assistant what did I leave unfinished this week?",
-    prompt: "@assistant what did I leave unfinished this week?",
+    label: "@assistant can you create an itinerary for my portugal trip exactly like we did for kyoto",
+    prompt: "@assistant can you create an itinerary for my portugal trip exactly like we did for kyoto",
     tag: "Assistant",
     icon: Sparkles,
     action: "assistant",

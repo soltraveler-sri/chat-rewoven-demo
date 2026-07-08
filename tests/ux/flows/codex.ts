@@ -17,7 +17,7 @@ export const codexFlow: UxFlow = {
         // Clicking the empty-state prompt card must submit by itself.
         await page.getByText("@codex add a dark-mode toggle to the settings page").first().click()
         await assertVisible(
-          page.locator(".max-w-3xl").getByText("@codex add a dark-mode toggle to the settings page"),
+          page.locator(".max-w-4xl").getByText("@codex add a dark-mode toggle to the settings page"),
           "codex user message submitted without typing"
         )
       },
