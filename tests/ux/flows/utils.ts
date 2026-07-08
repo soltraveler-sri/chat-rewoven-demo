@@ -68,7 +68,10 @@ export async function assertCurrentEmptyState(page: Page) {
     "branch-first prompt card"
   )
   await assertVisible(page.getByText("@codex add a dark-mode toggle to the settings page"), "Codex card")
-  await assertVisible(page.getByText("@assistant what did I leave unfinished this week?"), "Assistant card")
+  await assertVisible(
+    page.getByText("@assistant can you create an itinerary for my portugal trip exactly like we did for kyoto"),
+    "Assistant card"
+  )
   await assertVisible(page.getByText("/find the chat about the telescope"), "Find card")
   await assertVisible(page.getByText("use our sample document"), "sample-document inline action")
   await assertVisible(page.getByText(/Walkthrough · \d\/5/), "loose-threads rail pill")

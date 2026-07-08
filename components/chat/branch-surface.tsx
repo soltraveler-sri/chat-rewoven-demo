@@ -294,7 +294,7 @@ export function BranchSurface({
   return (
     <section
       aria-label="Branch side thread"
-      className="relative flex h-full w-[58%] min-w-0 shrink-0 flex-col bg-background animate-message-in"
+      className="absolute inset-y-0 right-0 z-30 flex h-full w-[58%] min-w-0 flex-col bg-background shadow-[-10px_0_36px_rgba(0,0,0,0.08)] animate-branch-in"
     >
       {/* The seam: a single quiet line marking where the thread splits */}
       <div aria-hidden className="absolute inset-y-0 left-0 w-px bg-thread/30" />
