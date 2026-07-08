@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import {
   Check,
   Code,
@@ -22,6 +22,7 @@ import {
 
 const RAIL_HIDDEN_KEY = "cr:rail-hidden"
 const RAIL_PULSED_KEY = "cr:rail-pulsed"
+const RAIL_INTRO_KEY = "cr:rail-intro"
 
 type RailAction = "branch" | "find" | "codex" | "doc" | "assistant"
 
@@ -56,7 +57,7 @@ const ROWS: Array<{
   {
     key: "doc_audio",
     action: "doc",
-    name: "Hear a document",
+    name: "Listen to a document",
     whisper: "Attach the sample essay and read it aloud.",
     icon: FileAudio,
   },
@@ -83,6 +84,7 @@ export function LooseThreadsRail({
   const [isHidden, setIsHidden] = useState(false)
   const [shouldPulse, setShouldPulse] = useState(false)
   const [woven, setWoven] = useState<Set<WovenThreadKey>>(() => new Set())
+  const containerRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     const update = () => setWoven(getWovenThreads())
@@ -98,10 +100,23 @@ export function LooseThreadsRail({
       }
     }, 0)
 
+    // First visit only: open the walkthrough panel itself after a beat so
+    // nobody has to discover it. It closes like any panel and never reopens
+    // on its own.
+    let introTimer: number | undefined
+    if (window.localStorage.getItem(RAIL_INTRO_KEY) !== "1" &&
+        window.localStorage.getItem(RAIL_HIDDEN_KEY) !== "1") {
+      introTimer = window.setTimeout(() => {
+        setIsOpen(true)
+        window.localStorage.setItem(RAIL_INTRO_KEY, "1")
+      }, 1400)
+    }
+
     window.addEventListener(WOVEN_THREADS_EVENT, update)
     window.addEventListener("storage", update)
     return () => {
       window.clearTimeout(mountTimer)
+      if (introTimer) window.clearTimeout(introTimer)
       window.removeEventListener(WOVEN_THREADS_EVENT, update)
       window.removeEventListener("storage", update)
     }
@@ -111,14 +126,27 @@ export function LooseThreadsRail({
   const isComplete = completedCount === ROWS.length
 
   const label = useMemo(
-    () => (isComplete ? "Woven · 5/5" : `Threads · ${completedCount}/5`),
+    () => (isComplete ? "Woven · 5/5" : `Walkthrough · ${completedCount}/5`),
     [completedCount, isComplete]
   )
+
+  // Close on any outside interaction so the panel never lingers under
+  // other surfaces (e.g. when a prompt card opens a branch).
+  useEffect(() => {
+    if (!isOpen) return
+    const onPointerDown = (event: PointerEvent) => {
+      if (!containerRef.current?.contains(event.target as Node)) {
+        setIsOpen(false)
+      }
+    }
+    window.addEventListener("pointerdown", onPointerDown)
+    return () => window.removeEventListener("pointerdown", onPointerDown)
+  }, [isOpen])
 
   if (!isMounted || isHidden) return null
 
   return (
-    <div className="relative">
+    <div ref={containerRef} className="relative">
       <Button
         type="button"
         variant={isOpen ? "secondary" : "outline"}
@@ -139,11 +167,11 @@ export function LooseThreadsRail({
           <div className="border-b border-border/60 bg-accent-soft/40 px-4 py-3">
             <div className="flex items-start justify-between gap-3">
               <div>
-                <h2 className="text-sm font-semibold">Loose threads</h2>
+                <h2 className="text-sm font-semibold">Walkthrough</h2>
                 <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
                   {isComplete
                     ? "All five woven. The rest is just chat — which is the point."
-                    : "Five real moves that show what this chat can hold."}
+                    : "Five real moves that show what this chat can hold — each weaves in as you try it."}
                 </p>
               </div>
               <Button
@@ -178,7 +206,7 @@ export function LooseThreadsRail({
                 <button
                   key={row.key}
                   type="button"
-                  onClick={() => onStage(row.action)}
+                  onClick={() => { setIsOpen(false); onStage(row.action) }}
                   className={cn(
                     "group flex w-full items-start gap-3 rounded-lg px-3 py-2.5 text-left transition-colors",
                     "border border-transparent hover:border-thread/30 hover:bg-accent-soft/35 focus:outline-none focus:ring-2 focus:ring-ring/30"

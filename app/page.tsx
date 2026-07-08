@@ -12,8 +12,8 @@ import {
 import { toast } from "sonner"
 import { AssistantLauncher, AssistantTaskCard } from "@/components/assistant"
 import {
-  BranchNudge,
-  BranchOverlay,
+  BranchSurface,
+  requestBranchClose,
   ChatMessageBubble,
   FileAttachmentChip,
   LooseThreadsRail,
@@ -54,6 +54,7 @@ import {
   type UnifiedMessage,
 } from "@/lib/chat/unified"
 import type { BranchThread, MainThreadState } from "@/lib/types"
+import { cn } from "@/lib/utils"
 
 const BRANCH_STARTER_PROMPT = "Plan a 3-day Kyoto trip focused on food"
 const CODEX_STARTER_PROMPT = "@codex add a dark-mode toggle to the settings page"
@@ -61,7 +62,6 @@ const ASSISTANT_STARTER_PROMPT = "@assistant what did I leave unfinished this we
 const FIND_STARTER_PROMPT = "/find the chat about the telescope"
 const FIND_PREREQ_NOTICE =
   "You'll need a few chats in history first — have a couple of conversations, then try /find."
-const BRANCH_NUDGE_STORAGE_KEY = "cr:nudge:branch"
 const SAMPLE_DOCUMENT_PATH = "/samples/a-short-history-of-weaving.pdf"
 
 function UnifiedDemoContent() {
@@ -81,8 +81,6 @@ function UnifiedDemoContent() {
   >({})
   const [activeBranchId, setActiveBranchId] = useState<string | null>(null)
   const [tasks, setTasks] = useState<Record<string, CodexTask>>({})
-  const [branchNudgeTargetLocalId, setBranchNudgeTargetLocalId] = useState<string | null>(null)
-  const [branchNudgeDismissed, setBranchNudgeDismissed] = useState(false)
   const [prereqNotice, setPrereqNotice] = useState<string | null>(null)
   const [sampleDocPendingSubmit, setSampleDocPendingSubmit] = useState(false)
 
@@ -181,13 +179,6 @@ function UnifiedDemoContent() {
   const messages = state.messages as UnifiedMessage[]
   const hasMessages = state.messages.length > 0
   const hasFinderResults = finder.finderOptions.length > 0
-
-  useEffect(() => {
-    if (typeof window === "undefined") return
-    setBranchNudgeDismissed(
-      window.localStorage.getItem(BRANCH_NUDGE_STORAGE_KEY) === "1"
-    )
-  }, [])
 
   useEffect(() => {
     if (isLoadingThreads || typeof window === "undefined") return
@@ -360,13 +351,11 @@ function UnifiedDemoContent() {
 
         if (branchNudgeArmedRef.current) {
           branchNudgeArmedRef.current = false
-          if (
-            typeof window !== "undefined" &&
-            window.localStorage.getItem(BRANCH_NUDGE_STORAGE_KEY) !== "1"
-          ) {
-            setBranchNudgeTargetLocalId(assistantMessage.localId)
-            setBranchNudgeDismissed(false)
-          }
+          // Carry the walkthrough all the way to the feature: give the reply
+          // a beat to settle, then open a branch from it.
+          window.setTimeout(() => {
+            branches.handleBranch(assistantMessage.localId, responseData.id)
+          }, 700)
         }
 
         lastResponseIdRef.current = responseData.id
@@ -566,20 +555,11 @@ function UnifiedDemoContent() {
     setPrereqNotice(FIND_PREREQ_NOTICE)
   }, [])
 
-  const dismissBranchNudge = useCallback(() => {
-    if (typeof window !== "undefined") {
-      window.localStorage.setItem(BRANCH_NUDGE_STORAGE_KEY, "1")
-    }
-    setBranchNudgeDismissed(true)
-    setBranchNudgeTargetLocalId(null)
-  }, [])
-
   const handleBranchFromMessage = useCallback(
     (localId: string, responseId: string) => {
-      dismissBranchNudge()
       branches.handleBranch(localId, responseId)
     },
-    [branches, dismissBranchNudge]
+    [branches]
   )
 
   const stagePromptSubmit = useCallback((prompt: string) => {
@@ -662,13 +642,11 @@ function UnifiedDemoContent() {
         const latestAssistantReply = [...messages]
           .reverse()
           .find((message) => message.role === "assistant" && message.responseId)
-        if (
-          latestAssistantReply &&
-          typeof window !== "undefined" &&
-          window.localStorage.getItem(BRANCH_NUDGE_STORAGE_KEY) !== "1"
-        ) {
-          setBranchNudgeTargetLocalId(latestAssistantReply.localId)
-          setBranchNudgeDismissed(false)
+        if (latestAssistantReply?.responseId) {
+          branches.handleBranch(
+            latestAssistantReply.localId,
+            latestAssistantReply.responseId
+          )
           return
         }
         stageBranchStarter()
@@ -689,6 +667,7 @@ function UnifiedDemoContent() {
       stageAssistantStarter()
     },
     [
+      branches,
       messages,
       stageAssistantStarter,
       stageBranchStarter,
@@ -714,19 +693,51 @@ function UnifiedDemoContent() {
     stagePromptSubmit,
   ])
 
+  const branchIsOpen = !!activeBranchId && !!branches.activeBranch
+
   return (
     <TooltipProvider delayDuration={300}>
       <div className="flex h-full">
-        <UnifiedSidebar
-          threads={threads}
-          isLoadingThreads={isLoadingThreads}
-          activeThreadId={storedThreadIdRef.current}
-          urlChatId={urlChatId}
-          onReset={handleReset}
-          onSelectThread={handleSelectThread}
-        />
+        {/* Sidebar leaves entirely while a branch is open (two clean surfaces) */}
+        <div
+          className={cn(
+            "flex shrink-0 overflow-hidden transition-[width,opacity] duration-300",
+            branchIsOpen ? "w-0 opacity-0" : "w-64 opacity-100"
+          )}
+          aria-hidden={branchIsOpen}
+        >
+          <UnifiedSidebar
+            threads={threads}
+            isLoadingThreads={isLoadingThreads}
+            activeThreadId={storedThreadIdRef.current}
+            urlChatId={urlChatId}
+            onReset={handleReset}
+            onSelectThread={handleSelectThread}
+          />
+        </div>
 
-        <div className="flex-1 flex flex-col">
+        {/* Main chat: dims to the background while the branch surface is open;
+            clicking it returns to the main thread (same close semantics as ✕) */}
+        <div className="relative flex min-w-0 flex-1 flex-col">
+          {branchIsOpen && (
+            <button
+              type="button"
+              aria-label="Return to the main chat"
+              className="absolute inset-0 z-20 cursor-pointer bg-transparent"
+              onClick={() => {
+                if (branches.activeBranch && !isMerging) {
+                  requestBranchClose(branches.activeBranch, branches.handleCloseBranch)
+                }
+              }}
+            />
+          )}
+          <div
+            className={cn(
+              "flex min-w-0 flex-1 flex-col transition-opacity duration-300",
+              branchIsOpen && "pointer-events-none opacity-40 select-none"
+            )}
+            aria-hidden={branchIsOpen}
+          >
           <StorageWarningBanner className="m-2" />
 
           <div className="flex items-center justify-between px-4 py-3 border-b border-border/40">
@@ -806,10 +817,6 @@ function UnifiedDemoContent() {
                         audioStreamConfig={docRead.ttsStreamConfigRef.current.get(message.localId)}
                         onAudioPlaybackStart={docRead.handleAudioPlaybackStart}
                       />
-                      {!branchNudgeDismissed &&
-                        branchNudgeTargetLocalId === message.localId && (
-                          <BranchNudge onDismiss={dismissBranchNudge} />
-                        )}
                     </div>
                   )
                 })}
@@ -921,13 +928,17 @@ function UnifiedDemoContent() {
           </div>
         </div>
 
-        <BranchOverlay
-          branch={branches.activeBranch}
-          parentMessageText={branches.parentMessageText}
-          isOpen={!!activeBranchId}
-          onClose={branches.handleCloseBranch}
-          onUpdateBranch={branches.handleUpdateBranch}
-        />
+        </div>
+
+        {/* The branch as its own writing surface, right of the seam */}
+        {branchIsOpen && branches.activeBranch && (
+          <BranchSurface
+            branch={branches.activeBranch}
+            parentMessageText={branches.parentMessageText}
+            onClose={branches.handleCloseBranch}
+            onUpdateBranch={branches.handleUpdateBranch}
+          />
+        )}
 
         {isMerging && <MergingOverlay />}
       </div>

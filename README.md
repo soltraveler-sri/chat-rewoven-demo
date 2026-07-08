@@ -17,7 +17,7 @@ The bet here is that most of that integration work belongs to the interface. I u
 
 The empty state offers example prompts that run themselves, a few sample chats are pre-seeded so history has something in it, and a quiet `Threads · 0/5` pill in the header keeps score of which of the five ideas you've tried. A tour, if you want one:
 
-1. Click the first example prompt. When the reply finishes streaming, branch from it, tell the branch a secret, and close it with merge **on**.
+1. Click the first example prompt. When the reply finishes streaming, a branch opens beside it as its own writing surface. Tell the branch a secret, then close it with the context pill set to **including**.
 2. Ask the main chat about the secret. It knows — the merge is part of the conversation chain now, and it survives a reload.
 3. Type `/find the chat about the telescope`. Ranked results come back with a reason and a confidence label each; click one to open it.
 4. Run `@codex` with any small feature request, then ask a follow-up question about the code it produced. No pasting.

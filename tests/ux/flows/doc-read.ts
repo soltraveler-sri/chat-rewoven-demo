@@ -1,5 +1,5 @@
 import type { UxFlow } from "./types"
-import { assertVisible, waitForApp, sendComposer } from "./utils"
+import { assertVisible, waitForApp } from "./utils"
 
 export const docReadFlow: UxFlow = {
   name: "doc-read",

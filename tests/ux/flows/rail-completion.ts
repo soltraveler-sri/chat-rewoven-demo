@@ -9,13 +9,13 @@ export const railCompletionFlow: UxFlow = {
       name: "load-app-pill-at-zero",
       run: async ({ page, baseUrl }) => {
         await waitForApp(page, baseUrl)
-        await assertVisible(page.getByText("Threads · 0/5"), "rail pill starts at 0/5")
+        await assertVisible(page.getByText("Walkthrough · 0/5"), "rail pill starts at 0/5")
       },
     },
     {
       name: "stage-codex-from-rail",
       run: async ({ page }) => {
-        await page.getByText("Threads · 0/5").click()
+        await page.getByText("Walkthrough · 0/5").click()
         await page.getByText("Run a Codex task").click()
         await assertVisible(page.getByText("Ready to Apply").first(), "codex fixture task ready")
         await page.waitForFunction(
@@ -23,7 +23,7 @@ export const railCompletionFlow: UxFlow = {
           null,
           { timeout: 15_000 }
         )
-        await assertVisible(page.getByText("Threads · 1/5"), "pill advanced to 1/5")
+        await assertVisible(page.getByText("Walkthrough · 1/5"), "pill advanced to 1/5")
       },
     },
     {
@@ -35,11 +35,11 @@ export const railCompletionFlow: UxFlow = {
           const t = [...document.querySelectorAll("textarea")].pop()
           return t && !t.disabled
         })
-        await page.getByText("Threads · 1/5").click()
+        await page.getByText("Walkthrough · 1/5").click()
         const findRow = page.getByText("Find a past chat")
         if (!(await findRow.isVisible().catch(() => false))) {
           await page.waitForTimeout(500)
-          await page.getByText("Threads · 1/5").click()
+          await page.getByText("Walkthrough · 1/5").click()
         }
         await page.getByText("Find a past chat").click()
         await assertVisible(page.getByRole("heading", { name: "How JWST sees the early universe" }), "find fixture result")
@@ -48,21 +48,21 @@ export const railCompletionFlow: UxFlow = {
           null,
           { timeout: 15_000 }
         )
-        await assertVisible(page.getByText("Threads · 2/5"), "pill advanced to 2/5")
+        await assertVisible(page.getByText("Walkthrough · 2/5"), "pill advanced to 2/5")
       },
     },
     {
       name: "hide-rail-forever",
       run: async ({ page }) => {
-        await page.getByText("Threads · 2/5").click()
+        await page.getByText("Walkthrough · 2/5").click()
         const hideRow = page.getByText("Hide this")
         if (!(await hideRow.isVisible().catch(() => false))) {
           await page.waitForTimeout(500)
-          await page.getByText("Threads · 2/5").click()
+          await page.getByText("Walkthrough · 2/5").click()
         }
         await page.getByText("Hide this").click()
         await page.waitForFunction(
-          () => document.body.innerText.indexOf("Threads · ") === -1,
+          () => document.body.innerText.indexOf("Walkthrough · ") === -1,
           null,
           { timeout: 5_000 }
         )
